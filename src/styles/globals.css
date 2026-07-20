@@ -1,0 +1,144 @@
+@import 'tailwindcss';
+
+/*
+ * Single source of truth for design tokens.
+ * Every token here is exposed both as a CSS variable (`var(--color-accent)`)
+ * and as a Tailwind utility (`bg-accent`, `text-accent`, …).
+ * The TypeScript mirror used by the 3D scene lives in `src/styles/theme.ts`.
+ */
+@theme {
+  /* Surfaces */
+  --color-background: #05070a;
+  --color-surface: #0d121c;
+  --color-surface-raised: #141b28;
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+
+  /* Brand */
+  --color-primary: #38bdf8;
+  --color-primary-soft: #7dd3fc;
+  --color-secondary: #a855f7;
+  --color-accent: #67e8f9;
+
+  /* Semantic */
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #fb7185;
+  --color-info: #60a5fa;
+
+  /* Text */
+  --color-content: #eaf0f8;
+  --color-content-muted: rgba(234, 240, 248, 0.55);
+  --color-content-subtle: rgba(234, 240, 248, 0.32);
+
+  /* Celestial bodies — consumed by the Three.js scene through theme.ts */
+  --color-star-core: #ffeec2;
+  --color-star-corona: #f5b64a;
+  --color-starfield: #dbeafe;
+  --color-nebula-violet: #9333ea;
+  --color-nebula-blue: #2563eb;
+  --color-nebula-cyan: #22d3ee;
+
+  /* Typography */
+  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Chrome geometry — shared by layout components */
+  --spacing-header: 42px;
+  --spacing-statusbar: 32px;
+  --spacing-sidebar: 212px;
+  --spacing-inspector: 276px;
+
+  /* Motion */
+  --ease-cinematic: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-warp: cubic-bezier(0.55, 0.06, 0.25, 1);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background-color: var(--color-background);
+    color: var(--color-content);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  /* The window chrome is custom-drawn; never show the native context menu. */
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-primary) 45%, transparent);
+  }
+
+  input::placeholder {
+    color: var(--color-content-subtle);
+  }
+}
+
+@utility glass {
+  background-color: color-mix(in srgb, var(--color-surface) 55%, transparent);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--color-border);
+}
+
+@utility drag-region {
+  -webkit-app-region: drag;
+}
+
+@utility no-drag {
+  -webkit-app-region: no-drag;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+
+@keyframes fade-slide {
+  from {
+    opacity: 0;
+    translate: 18px 0;
+  }
+}
+
+@keyframes nebula-drift {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 60px -40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
