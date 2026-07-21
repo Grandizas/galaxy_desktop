@@ -68,6 +68,17 @@ export class MockFileSystemService implements FileSystemService {
     return MOCK_DRIVES
   }
 
+  async countChildren(paths: readonly string[]): Promise<Record<string, number>> {
+    await delay(LATENCY_MS)
+
+    const counts: Record<string, number> = {}
+    for (const path of paths) {
+      const node = resolveNode(path)
+      if (node?.isDirectory) counts[path] = node.children?.length ?? 0
+    }
+    return counts
+  }
+
   async openEntry(path: string): Promise<void> {
     console.warn(`[mock] openEntry(${path}) — no-op outside Tauri`)
   }

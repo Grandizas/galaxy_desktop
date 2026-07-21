@@ -76,6 +76,11 @@ export class TauriFileSystemService implements FileSystemService {
     }))
   }
 
+  async countChildren(paths: readonly string[]): Promise<Record<string, number>> {
+    if (paths.length === 0) return {}
+    return invoke<Record<string, number>>('count_children', { paths })
+  }
+
   async openEntry(path: string): Promise<void> {
     await openPath(path)
   }

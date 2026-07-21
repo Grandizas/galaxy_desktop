@@ -1,4 +1,6 @@
+import { ENTRY_KIND_LABEL } from '@/lib/classify'
 import { GALAXY } from '@/lib/constants'
+import { formatBytes, formatCount } from '@/utils/format'
 import { planetPalette } from '@/styles/theme'
 import type { CelestialBody, EntryKind, FsEntry, GalaxySystem } from '@/types'
 import { hashPick, hashUnit } from '@/utils/hash'
@@ -27,9 +29,20 @@ export function mapEntriesToGalaxy(
   path: string,
   label: string,
   entries: readonly FsEntry[],
+  limits: { maxPlanets?: number; maxMoons?: number } = {},
 ): GalaxySystem {
-  const folders = entries.filter((entry) => entry.isDirectory)
-  const files = entries.filter((entry) => !entry.isDirectory)
+  const maxPlanets = limits.maxPlanets ?? GALAXY.maxPlanets
+  const maxMoons = limits.maxMoons ?? GALAXY.maxMoons
+
+  const allFolders = entries.filter((entry) => entry.isDirectory)
+  const allFiles = entries.filter((entry) => !entry.isDirectory)
+
+  // A real system folder holds thousands of entries. Show the most relevant
+  // ones — most recently touched first — and report the remainder rather than
+  // silently pretending the directory is smaller than it is.
+  const folders = allFolders.length > maxPlanets ? byRecency(allFolders, maxPlanets) : allFolders
+  const files = allFiles.length > maxMoons ? byRecency(allFiles, maxMoons) : allFiles
+  const hiddenCount = allFolders.length - folders.length + (allFiles.length - files.length)
 
   const planets = folders.map((folder, index) => {
     const seed = hashUnit(folder.path)
@@ -39,6 +52,10 @@ export function mapEntriesToGalaxy(
     return {
       id: folder.path,
       label: folder.name,
+      meta:
+        folder.childCount === undefined
+          ? 'Folder'
+          : `Folder · ${formatCount(folder.childCount, 'item')}`,
       type: 'planet',
       kind: folder.kind,
       radius,
@@ -62,6 +79,7 @@ export function mapEntriesToGalaxy(
     return {
       id: file.path,
       label: file.name,
+      meta: `${ENTRY_KIND_LABEL[file.kind]} · ${formatBytes(file.size)}`,
       type: 'moon',
       kind: file.kind,
       radius: lerp(...GALAXY.moonRadiusRange, seed),
@@ -76,7 +94,14 @@ export function mapEntriesToGalaxy(
     } satisfies CelestialBody
   })
 
-  return { path, label, bodies: [...planets, ...moons] }
+  return { path, label, bodies: [...planets, ...moons], hiddenCount }
+}
+
+/** Most recently modified first; undated entries sort last, name-ordered. */
+function byRecency(entries: readonly FsEntry[], limit: number): FsEntry[] {
+  return [...entries]
+    .sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0) || a.name.localeCompare(b.name))
+    .slice(0, limit)
 }
 
 /** Placeholder satellites hinting at a folder's contents before it is read. */

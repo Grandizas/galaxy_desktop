@@ -27,6 +27,7 @@ export function GalaxyScene() {
   const selected = useSelectionStore((state) => state.selected)
   const select = useSelectionStore((state) => state.select)
   const setHovered = useSelectionStore((state) => state.setHovered)
+  const hoveredPath = useSelectionStore((state) => state.hovered)
 
   const query = useSearchStore((state) => state.query.trim().toLowerCase())
 
@@ -63,6 +64,7 @@ export function GalaxyScene() {
         const props = {
           body,
           selected: selected.has(body.id),
+          hovered: hoveredPath === body.id,
           dimmed: isDimmed(body),
           onSelect: handleSelect,
           onOpen: handleOpen,

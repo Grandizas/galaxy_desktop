@@ -1,5 +1,6 @@
 import { useOrbitalMotion } from '@/hooks/useOrbitalMotion'
 
+import { BodyLabel } from './BodyLabel'
 import type { CelestialProps } from './Planet'
 import { SelectionHalo } from './SelectionHalo'
 
@@ -10,6 +11,7 @@ import { SelectionHalo } from './SelectionHalo'
 export function Moon({
   body,
   selected = false,
+  hovered = false,
   dimmed = false,
   onSelect,
   onOpen,
@@ -67,6 +69,16 @@ export function Moon({
       </mesh>
 
       {selected && <SelectionHalo radius={body.radius * 2.6} />}
+
+      {/* Files are too dense to label at rest — reveal on hover or selection. */}
+      {(hovered || selected) && body.label && (
+        <BodyLabel
+          label={body.label}
+          meta={body.meta}
+          offset={body.radius + 0.7}
+          detailed={hovered}
+        />
+      )}
     </group>
   )
 }

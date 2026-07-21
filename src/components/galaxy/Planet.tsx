@@ -1,11 +1,11 @@
-import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { Vector3, type Mesh } from 'three'
 
 import { useOrbitalMotion } from '@/hooks/useOrbitalMotion'
 import type { CelestialBody } from '@/types'
 
+import { BodyLabel } from './BodyLabel'
 import { Moon } from './Moon'
 import { OrbitRing } from './OrbitRing'
 import { SelectionHalo } from './SelectionHalo'
@@ -16,6 +16,7 @@ const scratchScale = new Vector3()
 export interface CelestialProps {
   body: CelestialBody
   selected?: boolean
+  hovered?: boolean
   dimmed?: boolean
   onSelect?: (body: CelestialBody) => void
   onOpen?: (body: CelestialBody) => void
@@ -26,6 +27,7 @@ export interface CelestialProps {
 export function Planet({
   body,
   selected = false,
+  hovered = false,
   dimmed = false,
   onSelect,
   onOpen,
@@ -33,7 +35,6 @@ export function Planet({
 }: CelestialProps) {
   const groupRef = useOrbitalMotion(body.orbit)
   const meshRef = useRef<Mesh>(null)
-  const [hovered, setHovered] = useState(false)
 
   useFrame((_, delta) => {
     if (!meshRef.current) return
@@ -44,7 +45,6 @@ export function Planet({
   })
 
   const handleHover = (isHovered: boolean) => {
-    setHovered(isHovered)
     document.body.style.cursor = isHovered ? 'pointer' : 'default'
     onHover?.(isHovered ? body : null)
   }
@@ -93,20 +93,13 @@ export function Planet({
           <Moon key={satellite.id} body={satellite} dimmed={dimmed} />
         ))}
 
-        <Html
-          center
-          distanceFactor={26}
-          position={[0, -body.radius - 1.1, 0]}
-          className="pointer-events-none select-none"
-          zIndexRange={[20, 0]}
-        >
-          <span
-            className="font-sans text-[13px] tracking-[0.08em] whitespace-nowrap text-content/85"
-            style={{ opacity: dimmed ? 0.25 : 1 }}
-          >
-            {body.label}
-          </span>
-        </Html>
+        <BodyLabel
+          label={body.label}
+          meta={body.meta}
+          offset={body.radius + 1.1}
+          detailed={hovered}
+          dimmed={dimmed}
+        />
       </group>
     </>
   )

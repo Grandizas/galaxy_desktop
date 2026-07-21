@@ -3,6 +3,7 @@
 //! The wire format mirrors `src/services/filesystem/tauri/TauriFileSystemService.ts`
 //! — keep the two in sync when adding fields.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -136,6 +137,24 @@ fn windows_drives() -> Vec<Drive> {
         .collect()
 }
 
+/// Number of direct children per directory, for the satellites orbiting a
+/// folder-planet.
+///
+/// Deliberately a separate command: this is one `read_dir` per directory, so
+/// folding it into `list_directory` would make a large folder pay N+1 reads
+/// before anything could be drawn. The renderer paints first, then enriches.
+/// Unreadable directories are omitted rather than reported as zero.
+#[tauri::command]
+pub fn count_children(paths: Vec<String>) -> HashMap<String, u32> {
+    paths
+        .into_iter()
+        .filter_map(|path| {
+            let count = fs::read_dir(&path).ok()?.count() as u32;
+            Some((path, count))
+        })
+        .collect()
+}
+
 /// Volume label from the OS, falling back to a generic name.
 #[cfg(windows)]
 fn volume_label(root: &str) -> Option<String> {
@@ -232,6 +251,20 @@ mod tests {
                 assert!(entry.size.is_none(), "directories report no size");
             }
         }
+    }
+
+    #[test]
+    fn counts_children_and_skips_unreadable_paths() {
+        let home = get_home_dir().unwrap();
+        let bogus = r"C:\definitely-not-a-real-path-9f2a".to_string();
+
+        let counts = count_children(vec![home.clone(), bogus.clone()]);
+
+        assert!(counts.contains_key(&home), "readable directory must be counted");
+        assert!(!counts.contains_key(&bogus), "unreadable paths are omitted, not zeroed");
+
+        let listed = list_directory(home.clone()).unwrap().len() as u32;
+        assert_eq!(counts[&home], listed, "count must match the listing");
     }
 
     #[test]
