@@ -73,6 +73,54 @@ describe('mapEntriesToGalaxy', () => {
     })
   })
 
+  /**
+   * Regression: System32 is full of near-identical names (ms-MY, ms-MT, nl-NL…).
+   * A polynomial hash mapped them all to nearly the same angle, so every planet
+   * sat on one bearing at a growing radius — a straight line into the void.
+   */
+  describe('layout under adversarial names', () => {
+    const locales = [
+      'ms-MY',
+      'ms-MT',
+      'nl-NL',
+      'nb-NO',
+      'pl-PL',
+      'pt-BR',
+      'pt-PT',
+      'ro-RO',
+      'ru-RU',
+      'sk-SK',
+      'sl-SI',
+      'sr-Latn-RS',
+    ].map((name, i) => entry(name, true, i))
+
+    it('spreads similar names around the full circle', () => {
+      const phases = map(locales).bodies.map((body) => body.orbit.phase)
+
+      // Bucket into octants: a healthy layout touches most of them.
+      const octants = new Set(phases.map((p) => Math.floor((p / (Math.PI * 2)) * 8)))
+      expect(octants.size).toBeGreaterThanOrEqual(6)
+    })
+
+    it('never places two planets at the same bearing', () => {
+      const phases = map(locales)
+        .bodies.map((body) => body.orbit.phase)
+        .sort((a, b) => a - b)
+
+      const gaps = phases.slice(1).map((phase, i) => phase - phases[i]!)
+      // Anything under ~2° would read as a single radial line on screen.
+      expect(Math.min(...gaps)).toBeGreaterThan(0.035)
+    })
+
+    it('keeps a large system within camera range', () => {
+      const many = Array.from({ length: 120 }, (_, i) => entry(`dir-${i}`, true, i))
+      const radii = map(many, { maxPlanets: 120 }).bodies.map((body) => body.orbit.radius)
+
+      // maxDistance is 160; the outermost orbit must stay comfortably inside it.
+      expect(Math.max(...radii)).toBeLessThan(110)
+    })
+  })
+
   it('only gives satellites to folders whose child count is known', () => {
     const known: FsEntry = { ...entry('Projects', true), childCount: 3 }
     const unknown = entry('Pictures', true)

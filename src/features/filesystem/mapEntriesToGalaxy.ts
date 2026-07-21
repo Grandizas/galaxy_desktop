@@ -19,6 +19,18 @@ const KIND_COLOR: Record<EntryKind, string> = {
 
 const lerp = (min: number, max: number, t: number) => min + (max - min) * t
 
+/** ~137.5°, the angle that never repeats — sunflower-seed packing. */
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
+
+/**
+ * Orbit radius grows with the square root of the index, so a system stays
+ * legible whether it holds three folders or a hundred. Linear growth pushed the
+ * outermost planet of a large directory ~660 units out — far past the camera's
+ * useful range, and the reason big folders trailed off into the distance.
+ */
+const orbitRadiusFor = (index: number) =>
+  GALAXY.firstOrbitRadius + GALAXY.orbitSpacing * Math.sqrt(index) * 1.6
+
 /**
  * Projects a directory listing into the 3D scene graph.
  *
@@ -47,7 +59,7 @@ export function mapEntriesToGalaxy(
   const planets = folders.map((folder, index) => {
     const seed = hashUnit(folder.path)
     const radius = lerp(...GALAXY.planetRadiusRange, seed)
-    const orbitRadius = GALAXY.firstOrbitRadius + index * GALAXY.orbitSpacing
+    const orbitRadius = orbitRadiusFor(index)
 
     return {
       id: folder.path,
@@ -63,7 +75,9 @@ export function mapEntriesToGalaxy(
       emissive: 0.28,
       orbit: {
         radius: orbitRadius,
-        phase: seed * Math.PI * 2,
+        // Golden angle by index, jittered by the hash. Structural spacing means
+        // planets can never line up, whatever the names happen to hash to.
+        phase: (index * GOLDEN_ANGLE + seed * 0.6) % (Math.PI * 2),
         speed: (GALAXY.baseOrbitSpeed * GALAXY.firstOrbitRadius) / orbitRadius,
         inclination: (seed - 0.5) * 2 * GALAXY.maxInclination,
       },
