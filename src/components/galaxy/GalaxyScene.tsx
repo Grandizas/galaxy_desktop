@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 import type { Vector3 } from 'three'
 
+import { useEntryActions } from '@/features/explorer/useEntryActions'
 import { mapEntriesToGalaxy } from '@/features/filesystem/mapEntriesToGalaxy'
 import { useWarpTransition } from '@/features/navigation/useWarpTransition'
 import { GALAXY, STARFIELD } from '@/lib/constants'
@@ -38,6 +39,7 @@ export function GalaxyScene() {
 
   const query = useSearchStore((state) => state.query.trim().toLowerCase())
   const { enterSystem } = useWarpTransition()
+  const { open: openEntry } = useEntryActions()
   const reducedMotion = useUiStore((state) => state.reducedMotion)
 
   const system = useMemo(
@@ -81,11 +83,17 @@ export function GalaxyScene() {
     openContextMenu({ path: body.id, ...screen })
   }
 
-  const handleOpen = (body: CelestialBody, worldPosition: Vector3) => {
-    if (body.type !== 'planet') return
-    // Built explicitly rather than via toArray(): that resolves to a tuple only
-    // through contextual overload selection, which is easy to break silently.
-    void enterSystem(body.id, [worldPosition.x, worldPosition.y, worldPosition.z])
+  /** Double-click: folders are flown into, files are handed to Windows. */
+  const handleOpen = (body: CelestialBody, worldPosition?: Vector3) => {
+    if (body.type === 'planet' && worldPosition) {
+      // Built explicitly rather than via toArray(): that resolves to a tuple
+      // only through contextual overload selection, easy to break silently.
+      void enterSystem(body.id, [worldPosition.x, worldPosition.y, worldPosition.z])
+      return
+    }
+
+    const entry = entries.find((candidate) => candidate.path === body.id)
+    if (entry) void openEntry(entry)
   }
 
   return (
@@ -103,7 +111,9 @@ export function GalaxyScene() {
       <Sun />
       <ParticleField />
 
-      {env.enableDebug && <PerfProbe bodies={system.bodies.length} />}
+      {/* Counts what is actually drawn: `system.bodies` excludes satellites,
+          which are nested under each planet and can outnumber the rest. */}
+      {env.enableDebug && <PerfProbe bodies={planets.length + instanced.length} />}
 
       {/* All orbit paths in one mesh. */}
       <OrbitRings planets={planets} selected={selected} />
@@ -116,6 +126,7 @@ export function GalaxyScene() {
         isDimmed={isDimmed}
         frozen={reducedMotion}
         onSelect={handleSelect}
+        onOpen={handleOpen}
         onHover={handleHover}
         onContextMenu={handleContextMenu}
       />

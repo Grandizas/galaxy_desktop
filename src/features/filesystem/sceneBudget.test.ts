@@ -17,22 +17,32 @@ const entry = (name: string, isDirectory: boolean, childCount?: number): FsEntry
   ...(childCount === undefined ? {} : { childCount }),
 })
 
-/** A directory the size of C:\Windows\System32. */
-const hugeDirectory = [
-  ...Array.from({ length: 200 }, (_, i) => entry(`dir-${i}`, true, 5)),
-  ...Array.from({ length: 4800 }, (_, i) => entry(`file-${i}.dll`, false)),
-]
+const folders = (count: number) =>
+  Array.from({ length: count }, (_, i) => entry(`dir-${i}`, true, 5))
+const files = (count: number) =>
+  Array.from({ length: count }, (_, i) => entry(`file-${i}.dll`, false))
+
+/**
+ * Deliberately over *both* budgets. An earlier fixture had 200 folders against
+ * a 220-planet budget, so a regression that removed folder truncation entirely
+ * would still have passed.
+ */
+const hugeDirectory = [...folders(GALAXY.maxPlanets + 80), ...files(GALAXY.maxMoons + 2300)]
 
 describe('scene budget', () => {
   const system = mapEntriesToGalaxy('C:\\Windows\\System32', 'System32', hugeDirectory)
 
   it('truncates a huge directory to the render budget', () => {
-    const folders = hugeDirectory.filter((entry) => entry.isDirectory).length
-    const files = hugeDirectory.length - folders
-    const expected = Math.min(folders, GALAXY.maxPlanets) + Math.min(files, GALAXY.maxMoons)
+    const folderCount = hugeDirectory.filter((entry) => entry.isDirectory).length
+    const fileCount = hugeDirectory.length - folderCount
 
-    expect(system.bodies).toHaveLength(expected)
-    expect(system.hiddenCount).toBe(hugeDirectory.length - expected)
+    // Both axes must actually exceed their budget, or this asserts nothing.
+    expect(folderCount).toBeGreaterThan(GALAXY.maxPlanets)
+    expect(fileCount).toBeGreaterThan(GALAXY.maxMoons)
+
+    expect(system.bodies.filter((b) => b.type === 'planet')).toHaveLength(GALAXY.maxPlanets)
+    expect(system.bodies.filter((b) => b.type !== 'planet')).toHaveLength(GALAXY.maxMoons)
+    expect(system.hiddenCount).toBe(hugeDirectory.length - system.bodies.length)
   })
 
   it('instancing removes the per-body draw call', () => {
@@ -48,12 +58,16 @@ describe('scene budget', () => {
   })
 
   it('keeps draw calls flat as the file count grows', () => {
-    const small = mapEntriesToGalaxy('C:\\A', 'A', hugeDirectory.slice(0, 40))
-    const large = mapEntriesToGalaxy('C:\\B', 'B', hugeDirectory)
+    // Identical folders in both, so the only variable is the number of files.
+    // Comparing a folder-only directory against a mixed one would let the
+    // planet allowance absorb any number of stray file draw calls.
+    const sameFolders = folders(30)
 
-    const growth = estimateDrawCalls(large) - estimateDrawCalls(small)
+    const oneFile = mapEntriesToGalaxy('C:\\A', 'A', [...sameFolders, ...files(1)])
+    const manyFiles = mapEntriesToGalaxy('C:\\B', 'B', [...sameFolders, ...files(2000)])
 
-    // Only the planet count may grow; files must not add draw calls at all.
-    expect(growth).toBeLessThanOrEqual(GALAXY.maxPlanets)
+    expect(estimateDrawCalls(manyFiles)).toBe(estimateDrawCalls(oneFile))
+    // And the extra files really are being rendered, not silently dropped.
+    expect(manyFiles.bodies.length).toBeGreaterThan(oneFile.bodies.length + 1000)
   })
 })

@@ -2,14 +2,18 @@ import { create } from 'zustand'
 
 export interface PerfSample {
   fps: number
-  /** Milliseconds per frame, averaged over the sampling window. */
+  /**
+   * Worst frame time within the sampling window, in milliseconds — the peak,
+   * not the mean. A single 200 ms stall is what the user feels; an average
+   * hides it behind the good frames either side.
+   */
   frameMs: number
   drawCalls: number
   triangles: number
   geometries: number
   textures: number
   programs: number
-  /** Bodies handed to the renderer this frame. */
+  /** Bodies handed to the renderer this frame, satellites included. */
   bodies: number
 }
 
