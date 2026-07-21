@@ -20,6 +20,7 @@ export function Moon({
   onSelect,
   onOpen,
   onHover,
+  onContextMenu,
 }: CelestialProps) {
   const groupRef = useOrbitalMotion(body.orbit)
   const materializeRef = useMaterialize<Group>(index)
@@ -33,7 +34,15 @@ export function Moon({
             interactive
               ? (event) => {
                   event.stopPropagation()
-                  onSelect?.(body)
+                  onSelect?.(body, event.ctrlKey || event.metaKey)
+                }
+              : undefined
+          }
+          onContextMenu={
+            interactive
+              ? (event) => {
+                  event.stopPropagation()
+                  onContextMenu?.(body, { x: event.clientX, y: event.clientY })
                 }
               : undefined
           }

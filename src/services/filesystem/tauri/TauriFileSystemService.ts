@@ -81,6 +81,31 @@ export class TauriFileSystemService implements FileSystemService {
     return invoke<Record<string, number>>('count_children', { paths })
   }
 
+  async createDirectory(parent: string, name: string): Promise<FsEntry> {
+    try {
+      return toEntry(await invoke<RawEntry>('create_directory', { parent, name }))
+    } catch (error) {
+      throw toFsError(error, parent)
+    }
+  }
+
+  async renameEntry(path: string, newName: string): Promise<FsEntry> {
+    try {
+      return toEntry(await invoke<RawEntry>('rename_entry', { path, newName }))
+    } catch (error) {
+      throw toFsError(error, path)
+    }
+  }
+
+  async deleteEntries(paths: readonly string[]): Promise<readonly string[]> {
+    if (paths.length === 0) return []
+    try {
+      return await invoke<string[]>('delete_entries', { paths })
+    } catch (error) {
+      throw toFsError(error, paths[0])
+    }
+  }
+
   async openEntry(path: string): Promise<void> {
     await openPath(path)
   }

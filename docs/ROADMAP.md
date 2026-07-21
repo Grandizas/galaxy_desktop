@@ -122,20 +122,44 @@ refs on nested groups. Sharing one object would make them fight for `scale` ever
 
 ---
 
-## Phase 3 — Explorer essentials
+## Phase 3 — Explorer essentials — mostly done
 
-The design file specifies all of these; none are implemented.
+| Feature                                                   | State                                                                           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| ✅ Context menu (Open, Rename, Copy path, Reveal, Delete) | Right-click any body; closes on Escape, outside click or window blur            |
+| ✅ `create_directory` / `rename_entry` / `delete_entries` | Rust commands, all async and off the main thread                                |
+| ✅ Recycle Bin, never a hard delete                       | The `trash` crate hands the operation to the shell, so everything is restorable |
+| ✅ Delete confirmation                                    | Modal focuses **Cancel**, so a stray Enter cannot delete                        |
+| ✅ Ctrl-click multi-select                                | Right-clicking inside a selection keeps it; outside it targets one body         |
+| ✅ New folder button → immediate inline rename            | Picks a free "New World N" name                                                 |
+| ✅ `F2` rename, `Delete` key                              | Wired through the same actions as the menu                                      |
+| ⬜ Shift-range select and marquee                         | `selectionStore` models the anchor; no UI yet                                   |
+| ⬜ Drag & drop                                            | Deferred — see below                                                            |
+| ⬜ "Form dust" birth animation                            | New folders currently just materialise with the rest                            |
 
-- **Context menu** (right-click a body): Open, Rename, Copy path, Reveal, Delete
-- **File operations** in Rust: `create_directory`, `rename_entry`, `delete_entry` (to Recycle Bin,
-  never a hard delete), each with a confirmation step
-- **Multi-select**: Ctrl-click toggle, marquee select, Shift-range — `selectionStore` already
-  models a set and a `lastSelected` anchor
-- **Drag & drop**: body → planet to move; OS files → window to import (`dragDropEnabled` is
-  already true in `tauri.conf.json`)
-- **New folder** button with the design's "form dust" birth animation
+### The safety layer
 
-**Done when:** you can create, rename and delete without leaving the galaxy.
+Deleting real files deserved more care than the rest of the app, so `src-tauri/src/safety.rs`
+gates every mutation and has **7 tests of its own**:
+
+- **Path traversal is impossible.** A rename to `..\..\Windows` is rejected — names must be plain
+  file names, so an operation can never escape its directory.
+- **Protected paths.** Drive roots, the user profile, well-known folders (Desktop, Documents…) and
+  Windows system directories cannot be deleted.
+- **Validate-all-then-act.** One protected path anywhere in a multi-select aborts the entire batch,
+  so a delete can never be half-applied.
+- **Names Windows would silently alter** (trailing dots/spaces, `CON`, `NUL`, `COM1`…) are refused
+  rather than creating a file that cannot afterwards be opened or deleted.
+
+A test caught a real hole here: `C:\` parses as `Prefix` + `RootDir`, so an obvious
+"fewer than two components means it's a root" check let the drive root through.
+
+### Deferred: drag & drop
+
+Moving a body onto a planet needs a 3D drag with a valid-target hit test, plus a `move_entries`
+command with its own guard rails (no moving a directory into itself). That is a phase-sized piece
+of work, not a finishing touch, and the value is lower than Phase 4's rendering work — a folder
+with 4,700 hidden entries is a bigger problem than the absence of drag-to-move.
 
 ---
 

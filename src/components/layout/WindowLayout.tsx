@@ -13,6 +13,8 @@ interface WindowLayoutProps {
   info?: ReactNode
   /** Centred overlay: breadcrumbs, search, anything else chrome-like. */
   overlay?: ReactNode
+  /** Bottom-right actions, e.g. New folder. */
+  actions?: ReactNode
   statusBar: ReactNode
   className?: string
 }
@@ -37,6 +39,7 @@ export function WindowLayout({
   children,
   info,
   overlay,
+  actions,
   statusBar,
   className,
 }: WindowLayoutProps) {
@@ -56,6 +59,8 @@ export function WindowLayout({
         )}
 
         {info && <div className="absolute top-4 right-4 z-20 w-inspector">{info}</div>}
+
+        {actions && <div className="absolute right-6 bottom-6 z-20 flex gap-2">{actions}</div>}
 
         <ToastStack />
       </main>

@@ -21,10 +21,12 @@ export interface CelestialProps {
   dimmed?: boolean
   /** Position in the system, used to stagger the entrance animation. */
   index?: number
-  onSelect?: (body: CelestialBody) => void
+  /** `additive` is a Ctrl-click: toggle rather than replace the selection. */
+  onSelect?: (body: CelestialBody, additive: boolean) => void
   /** Receives the body's current world position so the camera can fly to it. */
   onOpen?: (body: CelestialBody, worldPosition: Vector3) => void
   onHover?: (body: CelestialBody | null) => void
+  onContextMenu?: (body: CelestialBody, screen: { x: number; y: number }) => void
 }
 
 /** A folder, rendered as an orbiting planet with its own satellites. */
@@ -37,6 +39,7 @@ export function Planet({
   onSelect,
   onOpen,
   onHover,
+  onContextMenu,
 }: CelestialProps) {
   const groupRef = useOrbitalMotion(body.orbit)
   const materializeRef = useMaterialize<Group>(index)
@@ -71,7 +74,11 @@ export function Planet({
             ref={meshRef}
             onClick={(event) => {
               event.stopPropagation()
-              onSelect?.(body)
+              onSelect?.(body, event.ctrlKey || event.metaKey)
+            }}
+            onContextMenu={(event) => {
+              event.stopPropagation()
+              onContextMenu?.(body, { x: event.clientX, y: event.clientY })
             }}
             onDoubleClick={(event) => {
               event.stopPropagation()

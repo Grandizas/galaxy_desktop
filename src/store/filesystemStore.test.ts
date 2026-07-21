@@ -28,6 +28,13 @@ function stub(overrides: Partial<FileSystemService> = {}): FileSystemService {
     listDirectory: async (path) => listing(path),
     listDrives: async () => [],
     countChildren: async () => ({}),
+    createDirectory: async () => {
+      throw new Error('not stubbed')
+    },
+    renameEntry: async () => {
+      throw new Error('not stubbed')
+    },
+    deleteEntries: async (paths) => paths,
     openEntry: async () => {},
     revealEntry: async () => {},
     ...overrides,
@@ -122,6 +129,90 @@ describe('filesystemStore.navigateTo', () => {
     await useFilesystemStore.getState().navigateTo('C:\\Users\\Nova')
 
     expect(await useFilesystemStore.getState().navigateTo('C:\\Users\\Nova')).toBe(true)
+  })
+})
+
+describe('filesystemStore mutations', () => {
+  beforeEach(() => {
+    reset()
+    setFileSystemService(stub())
+  })
+
+  const entryFor = (path: string) => ({
+    path,
+    name: 'New World',
+    kind: 'folder' as const,
+    isDirectory: true,
+    size: null,
+    modifiedAt: 0,
+    createdAt: null,
+  })
+
+  it('refreshes the listing after creating a folder', async () => {
+    await useFilesystemStore.getState().navigateTo('C:\\A')
+
+    let listed = 0
+    setFileSystemService(
+      stub({
+        createDirectory: async (parent, name) => entryFor(`${parent}\\${name}`),
+        listDirectory: async (path) => {
+          listed++
+          return listing(path)
+        },
+      }),
+    )
+
+    const created = await useFilesystemStore.getState().createFolder('New World')
+
+    expect(created?.path).toBe('C:\\A\\New World')
+    expect(listed).toBeGreaterThan(0) // the galaxy must show the new planet
+  })
+
+  it('reports a failed creation without throwing', async () => {
+    await useFilesystemStore.getState().navigateTo('C:\\A')
+    setFileSystemService(
+      stub({
+        createDirectory: async () => {
+          throw new FsError('unsupported', '"New World" already exists here')
+        },
+      }),
+    )
+
+    const created = await useFilesystemStore.getState().createFolder('New World')
+
+    expect(created).toBeNull()
+    expect(useFilesystemStore.getState().error).toContain('already exists')
+  })
+
+  it('reports a rejected deletion so the UI can keep the selection', async () => {
+    await useFilesystemStore.getState().navigateTo('C:\\A')
+    setFileSystemService(
+      stub({
+        deleteEntries: async () => {
+          throw new FsError('unsupported', 'Refusing to delete a Windows system folder')
+        },
+      }),
+    )
+
+    const ok = await useFilesystemStore.getState().deleteEntries(['C:\\Windows'])
+
+    expect(ok).toBe(false)
+    expect(useFilesystemStore.getState().error).toContain('Refusing to delete')
+  })
+
+  it('does not call the backend for an empty deletion', async () => {
+    let called = false
+    setFileSystemService(
+      stub({
+        deleteEntries: async (paths) => {
+          called = true
+          return paths
+        },
+      }),
+    )
+
+    expect(await useFilesystemStore.getState().deleteEntries([])).toBe(false)
+    expect(called).toBe(false)
   })
 })
 

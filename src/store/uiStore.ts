@@ -5,12 +5,25 @@ export interface Toast {
   message: string
 }
 
+export interface ContextMenuTarget {
+  /** Entry the menu acts on. */
+  path: string
+  /** Screen coordinates of the click. */
+  x: number
+  y: number
+}
+
 interface UiState {
   sidebarOpen: boolean
   inspectorOpen: boolean
   searchOpen: boolean
   reducedMotion: boolean
   toasts: Toast[]
+  contextMenu: ContextMenuTarget | null
+  /** Path currently being renamed inline, if any. */
+  renamingPath: string | null
+  /** Paths queued for deletion, awaiting confirmation. */
+  pendingDeletion: readonly string[] | null
 }
 
 interface UiActions {
@@ -20,6 +33,10 @@ interface UiActions {
   setReducedMotion: (value: boolean) => void
   pushToast: (message: string) => void
   dismissToast: (id: number) => void
+  openContextMenu: (target: ContextMenuTarget) => void
+  closeContextMenu: () => void
+  startRename: (path: string | null) => void
+  requestDeletion: (paths: readonly string[] | null) => void
 }
 
 let toastId = 0
@@ -30,6 +47,9 @@ export const useUiStore = create<UiState & UiActions>((set) => ({
   searchOpen: false,
   reducedMotion: false,
   toasts: [],
+  contextMenu: null,
+  renamingPath: null,
+  pendingDeletion: null,
 
   toggleSidebar: (open) => set((state) => ({ sidebarOpen: open ?? !state.sidebarOpen })),
   toggleInspector: (open) => set((state) => ({ inspectorOpen: open ?? !state.inspectorOpen })),
@@ -42,4 +62,9 @@ export const useUiStore = create<UiState & UiActions>((set) => ({
     setTimeout(() => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })), 2600)
   },
   dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+
+  openContextMenu: (contextMenu) => set({ contextMenu }),
+  closeContextMenu: () => set({ contextMenu: null }),
+  startRename: (renamingPath) => set({ renamingPath, contextMenu: null }),
+  requestDeletion: (pendingDeletion) => set({ pendingDeletion, contextMenu: null }),
 }))

@@ -7,6 +7,7 @@ import { STARFIELD } from '@/lib/constants'
 import { useFilesystemStore } from '@/store/filesystemStore'
 import { useSearchStore } from '@/store/searchStore'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useUiStore } from '@/store/uiStore'
 import type { CelestialBody } from '@/types'
 import { basename } from '@/utils/path'
 
@@ -29,6 +30,7 @@ export function GalaxyScene() {
   const select = useSelectionStore((state) => state.select)
   const setHovered = useSelectionStore((state) => state.setHovered)
   const hoveredPath = useSelectionStore((state) => state.hovered)
+  const openContextMenu = useUiStore((state) => state.openContextMenu)
 
   const query = useSearchStore((state) => state.query.trim().toLowerCase())
   const { enterSystem } = useWarpTransition()
@@ -41,8 +43,18 @@ export function GalaxyScene() {
   const isDimmed = (body: CelestialBody) =>
     query.length > 0 && !body.label.toLowerCase().includes(query)
 
-  const handleSelect = (body: CelestialBody) => select(body.id)
+  const handleSelect = (body: CelestialBody, additive: boolean) =>
+    select(body.id, additive ? 'toggle' : 'replace')
+
   const handleHover = (body: CelestialBody | null) => setHovered(body?.id ?? null)
+
+  const handleContextMenu = (body: CelestialBody, screen: { x: number; y: number }) => {
+    // Right-clicking outside the selection targets just that body, matching
+    // Explorer; right-clicking inside it keeps the multi-selection intact.
+    if (!selected.has(body.id)) select(body.id)
+    openContextMenu({ path: body.id, ...screen })
+  }
+
   const handleOpen = (body: CelestialBody, worldPosition: Vector3) => {
     if (body.type !== 'planet') return
     // Built explicitly rather than via toArray(): that resolves to a tuple only
@@ -74,6 +86,7 @@ export function GalaxyScene() {
           dimmed: isDimmed(body),
           onSelect: handleSelect,
           onOpen: handleOpen,
+          onContextMenu: handleContextMenu,
           onHover: handleHover,
         }
         return body.type === 'planet' ? (

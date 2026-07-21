@@ -13,7 +13,12 @@ import { basename, dirname, normalizePath } from '@/utils/path'
  */
 const CHILD_COUNT_LIMIT = 200
 
-/** OS errors are unreadable; the status bar shows people-facing copy. */
+/**
+ * Raw OS errors ("os error 5") are unreadable, so those two codes get
+ * people-facing copy. Everything else already carries a message written for
+ * humans by our own backend — "New World already exists here" is far more
+ * useful than anything a generic translation could produce.
+ */
 function toMessage(error: unknown): string {
   if (error instanceof FsError) {
     const name = error.path ? basename(error.path) : 'that folder'
@@ -21,11 +26,9 @@ function toMessage(error: unknown): string {
       case 'permission-denied':
         return `Windows denied access to ${name}`
       case 'not-found':
-        return `${name} no longer exists`
-      case 'unsupported':
-        return `${name} cannot be opened as a folder`
+        return error.message.includes('os error') ? `${name} no longer exists` : error.message
       default:
-        return `Could not read ${name}`
+        return error.message
     }
   }
   return error instanceof Error ? error.message : String(error)
@@ -54,13 +57,22 @@ interface FilesystemActions {
    * Errors are caught and surfaced through `status`/`error` rather than thrown,
    * so callers that care about the outcome must check the return value.
    */
-  navigateTo: (path: string, options?: { replaceHistory?: boolean }) => Promise<boolean>
+  navigateTo: (
+    path: string,
+    options?: { replaceHistory?: boolean; force?: boolean },
+  ) => Promise<boolean>
   goBack: () => Promise<void>
   goForward: () => Promise<void>
   goUp: () => Promise<void>
   refresh: () => Promise<void>
   /** Backfills `childCount` for the directories in the current listing. */
   enrichChildCounts: (path: string) => Promise<void>
+
+  /* Mutations. Each returns the affected entry, or null when it failed —
+   * the error is surfaced through `error` exactly like a failed navigation. */
+  createFolder: (name: string) => Promise<FsEntry | null>
+  renameEntry: (path: string, newName: string) => Promise<FsEntry | null>
+  deleteEntries: (paths: readonly string[]) => Promise<boolean>
 }
 
 export type FilesystemStore = FilesystemState & FilesystemActions
@@ -85,7 +97,9 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
 
   async navigateTo(path, options) {
     const { cache, history, historyIndex, currentPath, entries } = get()
-    if (path === currentPath && get().status === 'ready') return true
+    // `force` exists for refresh: re-entering the directory you are already in
+    // must still re-read it, or a newly created folder never appears.
+    if (!options?.force && path === currentPath && get().status === 'ready') return true
 
     // Kept so the optimistic jump below can be undone if the read fails.
     const previous = { currentPath, entries }
@@ -195,11 +209,49 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
     if (parent) await get().navigateTo(parent)
   },
 
+  async createFolder(name) {
+    const { currentPath } = get()
+    if (!currentPath) return null
+
+    try {
+      const created = await getFileSystemService().createDirectory(currentPath, name)
+      await get().refresh()
+      return created
+    } catch (error) {
+      set({ error: toMessage(error) })
+      return null
+    }
+  },
+
+  async renameEntry(path, newName) {
+    try {
+      const renamed = await getFileSystemService().renameEntry(path, newName)
+      await get().refresh()
+      return renamed
+    } catch (error) {
+      set({ error: toMessage(error) })
+      return null
+    }
+  },
+
+  async deleteEntries(paths) {
+    if (paths.length === 0) return false
+
+    try {
+      await getFileSystemService().deleteEntries(paths)
+      await get().refresh()
+      return true
+    } catch (error) {
+      set({ error: toMessage(error) })
+      return false
+    }
+  },
+
   async refresh() {
     const { currentPath, cache } = get()
     if (!currentPath) return
     cache.delete(currentPath)
-    await get().navigateTo(currentPath, { replaceHistory: true })
+    await get().navigateTo(currentPath, { replaceHistory: true, force: true })
   },
 }))
 

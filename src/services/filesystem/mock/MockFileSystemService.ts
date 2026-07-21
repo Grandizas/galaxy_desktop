@@ -1,7 +1,7 @@
 import { classifyEntry } from '@/lib/classify'
 import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
 import { FsError } from '@/types'
-import { join, normalizePath } from '@/utils/path'
+import { dirname, join, normalizePath } from '@/utils/path'
 
 import type { FileSystemService } from '../types'
 import { MOCK_DRIVES, MOCK_HOME_PATH, MOCK_ROOTS, type MockNode } from './fixtures'
@@ -77,6 +77,53 @@ export class MockFileSystemService implements FileSystemService {
       if (node?.isDirectory) counts[path] = node.children?.length ?? 0
     }
     return counts
+  }
+
+  async createDirectory(parent: string, name: string): Promise<FsEntry> {
+    await delay(LATENCY_MS)
+
+    const node = resolveNode(parent)
+    if (!node?.isDirectory) throw new FsError('not-found', `No such directory: ${parent}`, parent)
+
+    node.children ??= []
+    if (node.children.some((child) => child.name === name)) {
+      throw new FsError('unsupported', `"${name}" already exists here`, parent)
+    }
+
+    const created: MockNode = { name, isDirectory: true, modifiedAt: Date.now(), children: [] }
+    node.children.push(created)
+    return toEntry(created, normalizePath(parent))
+  }
+
+  async renameEntry(path: string, newName: string): Promise<FsEntry> {
+    await delay(LATENCY_MS)
+
+    const parentPath = dirname(path)
+    const parent = parentPath ? resolveNode(parentPath) : null
+    const node = resolveNode(path)
+    if (!parent || !node) throw new FsError('not-found', `No such entry: ${path}`, path)
+
+    if (parent.children?.some((child) => child.name === newName && child !== node)) {
+      throw new FsError('unsupported', `"${newName}" already exists here`, path)
+    }
+
+    node.name = newName
+    return toEntry(node, normalizePath(parentPath!))
+  }
+
+  async deleteEntries(paths: readonly string[]): Promise<readonly string[]> {
+    await delay(LATENCY_MS)
+
+    for (const path of paths) {
+      const parentPath = dirname(path)
+      const parent = parentPath ? resolveNode(parentPath) : null
+      const node = resolveNode(path)
+      if (!parent?.children || !node) {
+        throw new FsError('not-found', `No such entry: ${path}`, path)
+      }
+      parent.children = parent.children.filter((child) => child !== node)
+    }
+    return paths
   }
 
   async openEntry(path: string): Promise<void> {
