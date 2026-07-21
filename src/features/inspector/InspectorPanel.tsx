@@ -2,10 +2,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 
 import { Button } from '@/components/ui/Button'
 import { Panel } from '@/components/ui/Panel'
+import { useEntryActions } from '@/features/explorer/useEntryActions'
 import { ENTRY_KIND_LABEL } from '@/lib/classify'
-import { getFileSystemService } from '@/services/filesystem'
-import { writeClipboard } from '@/services/platform'
-import { useFilesystemStore } from '@/store/filesystemStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { formatBytes, formatCount, formatDate } from '@/utils/format'
@@ -16,9 +14,8 @@ import { useInspectedEntry } from './useInspectedEntry'
 /** Right-hand detail panel for the targeted celestial body. */
 export function InspectorPanel() {
   const entry = useInspectedEntry()
-  const navigateTo = useFilesystemStore((state) => state.navigateTo)
+  const { open, copyPath, reveal } = useEntryActions()
   const clearSelection = useSelectionStore((state) => state.clear)
-  const pushToast = useUiStore((state) => state.pushToast)
   const renamingPath = useUiStore((state) => state.renamingPath)
   const startRename = useUiStore((state) => state.startRename)
   const requestDeletion = useUiStore((state) => state.requestDeletion)
@@ -63,10 +60,7 @@ export function InspectorPanel() {
                 variant="primary"
                 size="sm"
                 className="justify-start"
-                onClick={() => {
-                  if (entry.isDirectory) void navigateTo(entry.path)
-                  else void getFileSystemService().openEntry(entry.path)
-                }}
+                onClick={() => void open(entry)}
               >
                 {entry.isDirectory ? 'Enter system' : 'Open'}
               </Button>
@@ -74,10 +68,7 @@ export function InspectorPanel() {
                 variant="ghost"
                 size="sm"
                 className="justify-start"
-                onClick={() => {
-                  void writeClipboard(entry.path)
-                  pushToast('Path copied')
-                }}
+                onClick={() => void copyPath(entry)}
               >
                 Copy path
               </Button>
@@ -85,7 +76,7 @@ export function InspectorPanel() {
                 variant="ghost"
                 size="sm"
                 className="justify-start"
-                onClick={() => void getFileSystemService().revealEntry(entry.path)}
+                onClick={() => void reveal(entry)}
               >
                 Reveal in Explorer
               </Button>

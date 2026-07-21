@@ -163,19 +163,124 @@ with 4,700 hidden entries is a bigger problem than the absence of drag-to-move.
 
 ---
 
-## Phase 4 — Scale and performance
+## Phase 4 — Scale and performance ✅ done (two follow-ups open)
 
-Directories with thousands of entries need a different rendering strategy.
+### Measured first
 
-| Technique                                      | Impact                                              |
-| ---------------------------------------------- | --------------------------------------------------- |
-| `<Instances>` / `InstancedMesh` for moons      | Thousands of files in one draw call                 |
-| LOD on planets — drop to a billboard when far  | Geometry cost scales with what you can actually see |
-| Move directory reads to a Rust background task | Listing a huge folder stops blocking the UI         |
-| Cap DPR and add an adaptive quality tier       | Stable 60fps on integrated GPUs                     |
-| Windowed loading for very large directories    | Render what is near the camera, stream the rest     |
+`PerfProbe` samples `gl.info` inside the Canvas and publishes to `perfStore`; `PerfHud` shows
+fps, peak frame time, draw calls and triangle count in the corner, and `/debug` lists the full
+sample. Peak frame time rather than mean — a 200 ms stall matters more than a good average.
 
-Add a perf HUD to `/debug` (frame time, draw calls, body count) before optimising — measure first.
+`estimateDrawCalls()` counts the same cost analytically, so the effect of a change is visible in
+a unit test rather than only in a frame counter.
+
+### Instancing
+
+For a System32-sized directory (5,000 entries, 300 rendered):
+
+|                                | Before |   After |
+| ------------------------------ | -----: | ------: |
+| Draw calls                     |    785 | **127** |
+| Scene objects                  |    780 | **122** |
+| `useFrame` callbacks per frame |    660 | **120** |
+
+- **`MoonField`** draws every file _and_ every planet's satellites as one `InstancedMesh`. Their
+  orbits are evaluated in a single loop over a flat array instead of 540 separate `useFrame`
+  callbacks. Satellites orbit a planet that is itself moving, so both orbits are composed in that
+  same loop rather than by parenting objects.
+- **`OrbitRings`** instances all 120 orbit paths into one mesh. They never move, so the matrices
+  are written once per system rather than per frame.
+- **Planets stay individual.** They carry labels, an entrance animation and a selection halo, and
+  they are capped at 120 — a count that stays cheap.
+
+**The trade:** an instance carries a per-instance colour but not a per-instance emissive, so moons
+now use an unlit material. At their size they read as small bright dots either way, and the sun's
+light never meaningfully reached them.
+
+### Measured on the real machine
+
+`C:\Windows\System32`, 5,010 entries: **141 fps, 12.1 ms peak, 128 draw calls, 857k triangles.**
+The analytical estimate predicted 127 draw calls against 128 actual, so `estimateDrawCalls()` can
+be trusted for future changes.
+
+### Spending the headroom
+
+With files nearly free, the budget that hid 4,710 entries was mostly obsolete:
+
+|                    | Before |                After |
+| ------------------ | -----: | -------------------: |
+| Planet budget      |    120 |              **220** |
+| File budget        |    180 |            **2,500** |
+| Hidden in System32 |  4,710 |            **2,328** |
+| Bodies rendered    |    300 |            **2,682** |
+| Draw calls         |    128 |  **189** (predicted) |
+| Triangles          |   857k | **767k** (predicted) |
+
+Nine times the bodies for _fewer_ triangles, because the geometry was far denser than anything
+visible at these sizes: planet spheres dropped 48×48 → 32×24, moon instances 16×16 → 10×8.
+
+**Labels above 60 planets show on hover only.** Two hundred captions overlap into noise, so this
+is a legibility fix as much as a performance one — `<Html>` recomputes a CSS transform per element
+per frame, and it was the most likely remaining bottleneck.
+
+**Orbit rings now fade as their count grows.** Additive blending means overlapping rings
+accumulate; at 220 they would bury the bodies they describe.
+
+### 4.1 What instancing broke
+
+Sharing one mesh changed two things that per-object rendering had given for free.
+
+**Interaction died in sparse folders.** Satellites are decorative placeholders for a folder's
+unread contents — `label: ''` and a synthetic id (`…\Desktop#satellite-0`) matching no entry.
+`Planet` had rendered them without handlers, so they were inert. One shared mesh made every
+instance interactive, so hovering produced an empty card and clicking selected a path the
+inspector could not resolve. In `C:\Users\Nova` **20 of 22** small bodies were affected; in
+System32 only 18%, which is why it looked folder-specific. `interactiveBodyAt()` restores the
+distinction, with tests that fail against the pre-fix behaviour.
+
+**Raycasting went stale.** `InstancedMesh.raycast()` broad-phases against a bounding sphere it
+computes once and caches, but our instances orbit every frame. Individual meshes never had this
+problem because their world matrix moves with them. The envelope is now derived in closed form —
+orbits are bounded — and re-asserted inside the frame loop, because assigning it in an effect
+missed remounts that did not change the body list (every hot reload).
+
+**A correction.** An earlier version of this document blamed the sun's corona for swallowing
+clicks. That was wrong: R3F walks up from each hit looking for an ancestor with handlers, so
+objects with none produce no intersection and cannot block anything. The `raycast={() => null}`
+opt-outs on the sun, starfields and dust are worth keeping, but as **performance** — 7,200
+starfield points were being raycast on every pointer move for nothing.
+
+### 4.2 Telemetry correctness
+
+The HUD's body count read `system.bodies.length`, which holds planets and loose files only —
+satellites are nested under each planet and were never counted. System32 reported 2,682 against
+3,228 actually drawn. Draw calls and triangles were always right (they come from `gl.info`), but a
+telemetry field that quietly undercounts is worse than none, and those numbers had already been
+quoted in this document.
+
+Two budget tests were also weaker than they looked:
+
+- The fixture used 200 folders against a 220-planet budget, so removing folder truncation entirely
+  would still have passed. It is now derived from the constants and asserts the fixture exceeds
+  both budgets before testing truncation.
+- The "draw calls stay flat" test compared 40 folders with 220 folders plus files, so the planet
+  allowance could absorb up to 60 stray per-file draw calls. The folder set is now identical on
+  both sides and only the file count varies, asserting exact equality.
+
+Both were confirmed by reverting the source: removing folder truncation fails two tests, and
+making files cost a draw call each fails two.
+
+### Still open
+
+- **Re-measure after the budget raise.** 189 draw calls and 767k triangles remain predictions, and
+  the corrected body count has not been read off the HUD yet
+- **The 160 ms worst frame**, most likely the initial load or a warp transition — a single stall
+  rather than a steady-state problem, but worth isolating
+- **LOD on planets** and an **adaptive quality tier** — both on the original plan, both deliberately
+  not built. At 141 fps with a 12 ms peak there is no measured problem to solve, and building them
+  now would be optimising against a guess, which is what the HUD exists to prevent
+- Raising the file budget beyond 2,500 is possible, but a directory that large wants search rather
+  than more dots
 
 ---
 

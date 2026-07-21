@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { StatusBar } from '@/components/layout/StatusBar'
 import { Toolbar } from '@/components/layout/Toolbar'
 import { WindowLayout } from '@/components/layout/WindowLayout'
+import { PerfHud } from '@/features/debug/PerfHud'
 import { ExplorerOverlays } from '@/features/explorer/ExplorerOverlays'
 import { NewFolderButton } from '@/features/explorer/NewFolderButton'
 import { InspectorPanel } from '@/features/inspector/InspectorPanel'
@@ -61,6 +62,7 @@ export function AppShell() {
 
       {/* Context menu and delete confirmation. */}
       <ExplorerOverlays />
+      <PerfHud />
 
       {/* Routed pages render as overlays above the galaxy. */}
       <Outlet />

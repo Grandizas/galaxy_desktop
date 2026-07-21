@@ -3,6 +3,7 @@ import { getFileSystemService } from '@/services/filesystem'
 import { isTauri } from '@/services/platform'
 import { useCameraStore } from '@/store/cameraStore'
 import { useFilesystemStore } from '@/store/filesystemStore'
+import { usePerfStore } from '@/store/perfStore'
 import { useSelectionStore } from '@/store/selectionStore'
 
 import { RouteOverlay } from './RouteOverlay'
@@ -12,6 +13,7 @@ export function DebugPage() {
   const filesystem = useFilesystemStore()
   const camera = useCameraStore()
   const selection = useSelectionStore()
+  const perf = usePerfStore()
 
   const rows: Array<[string, unknown]> = [
     ['runtime', isTauri() ? 'tauri' : 'browser'],
@@ -27,6 +29,15 @@ export function DebugPage() {
     ['camera position', camera.position.join(', ')],
     ['transitioning', String(camera.isTransitioning)],
     ['star count', env.starCount],
+    ['—', '—'],
+    ['fps', `${perf.fps} (peak frame ${perf.frameMs.toFixed(1)} ms)`],
+    ['worst frame', `${perf.worstFrameMs.toFixed(1)} ms`],
+    ['draw calls', perf.drawCalls],
+    ['triangles', perf.triangles.toLocaleString()],
+    ['geometries', perf.geometries],
+    ['textures', perf.textures],
+    ['shader programs', perf.programs],
+    ['rendered bodies', perf.bodies],
   ]
 
   return (
