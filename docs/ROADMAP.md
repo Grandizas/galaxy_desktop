@@ -102,6 +102,21 @@ An earlier version of this document claimed a failed read "resets the view inste
 camera mid-warp". That was **not true when written** — the branch could never execute. It is true now,
 and `filesystemStore.test.ts` covers it.
 
+### 2.2 Navigation invariants ✅ done
+
+Writing tests for the review fix above exposed that **back and forward had never worked**.
+`navigateTo` unconditionally set `historyIndex` to the end of the stack, so Back moved the folder
+but snapped the pointer forward again; the second press went nowhere, and the forward stack was
+truncated at the wrong position.
+
+Two invariants now hold, each with tests:
+
+1. **A failed navigation changes nothing.** Not the path, not the entries, not the history pointer.
+   This includes undoing the optimistic jump into a cached listing whose revalidation fails — the
+   case that started this thread.
+2. **`replaceHistory` means the caller owns the pointer.** Back, forward and refresh move within
+   the existing history; only genuinely new navigation extends it.
+
 **Layered animation.** Orbital position, entrance scale and hover scale are driven by three separate
 refs on nested groups. Sharing one object would make them fight for `scale` every frame.
 

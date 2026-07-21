@@ -97,9 +97,102 @@ describe('filesystemStore.navigateTo', () => {
     expect(useFilesystemStore.getState().entries).toHaveLength(1)
   })
 
+  it('rolls back when revalidating a cached directory fails', async () => {
+    // Visit B so it is cached, then return to A.
+    await useFilesystemStore.getState().navigateTo('C:\\B')
+    await useFilesystemStore.getState().navigateTo('C:\\A')
+
+    // B is deleted behind our back; navigating there must not strand the user
+    // "inside" it showing stale cached contents.
+    setFileSystemService(
+      stub({
+        listDirectory: async (path) => {
+          throw new FsError('not-found', 'gone', path)
+        },
+      }),
+    )
+    const ok = await useFilesystemStore.getState().navigateTo('C:\\B')
+
+    expect(ok).toBe(false)
+    expect(useFilesystemStore.getState().currentPath).toBe('C:\\A')
+    expect(useFilesystemStore.getState().status).toBe('error')
+  })
+
   it('treats re-navigating to the current directory as success', async () => {
     await useFilesystemStore.getState().navigateTo('C:\\Users\\Nova')
 
     expect(await useFilesystemStore.getState().navigateTo('C:\\Users\\Nova')).toBe(true)
+  })
+})
+
+describe('filesystemStore history', () => {
+  beforeEach(() => {
+    reset()
+    setFileSystemService(stub())
+  })
+
+  const visit = (path: string) => useFilesystemStore.getState().navigateTo(path)
+
+  it('records each visited directory', async () => {
+    await visit('C:\\A')
+    await visit('C:\\B')
+    await visit('C:\\C')
+
+    const { history, historyIndex } = useFilesystemStore.getState()
+    expect(history).toEqual(['C:\\A', 'C:\\B', 'C:\\C'])
+    expect(historyIndex).toBe(2)
+  })
+
+  it('walks back one step at a time', async () => {
+    await visit('C:\\A')
+    await visit('C:\\B')
+    await visit('C:\\C')
+
+    await useFilesystemStore.getState().goBack()
+    expect(useFilesystemStore.getState().currentPath).toBe('C:\\B')
+    expect(useFilesystemStore.getState().historyIndex).toBe(1)
+
+    await useFilesystemStore.getState().goBack()
+    expect(useFilesystemStore.getState().currentPath).toBe('C:\\A')
+    expect(useFilesystemStore.getState().historyIndex).toBe(0)
+  })
+
+  it('walks forward again after going back', async () => {
+    await visit('C:\\A')
+    await visit('C:\\B')
+    await visit('C:\\C')
+    await useFilesystemStore.getState().goBack()
+    await useFilesystemStore.getState().goBack()
+
+    await useFilesystemStore.getState().goForward()
+    expect(useFilesystemStore.getState().currentPath).toBe('C:\\B')
+    expect(useFilesystemStore.getState().historyIndex).toBe(1)
+  })
+
+  it('truncates the forward stack when navigating somewhere new', async () => {
+    await visit('C:\\A')
+    await visit('C:\\B')
+    await useFilesystemStore.getState().goBack()
+    await visit('C:\\D')
+
+    expect(useFilesystemStore.getState().history).toEqual(['C:\\A', 'C:\\D'])
+    expect(useFilesystemStore.getState().historyIndex).toBe(1)
+  })
+
+  it('does not move the history pointer when going back fails', async () => {
+    await visit('C:\\A')
+    await visit('C:\\B')
+
+    setFileSystemService(
+      stub({
+        listDirectory: async (path) => {
+          throw new FsError('not-found', 'gone', path)
+        },
+      }),
+    )
+    await useFilesystemStore.getState().goBack()
+
+    expect(useFilesystemStore.getState().currentPath).toBe('C:\\B')
+    expect(useFilesystemStore.getState().historyIndex).toBe(1)
   })
 })

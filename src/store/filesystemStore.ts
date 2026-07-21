@@ -84,11 +84,15 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
   },
 
   async navigateTo(path, options) {
-    const { cache, history, historyIndex, currentPath } = get()
+    const { cache, history, historyIndex, currentPath, entries } = get()
     if (path === currentPath && get().status === 'ready') return true
+
+    // Kept so the optimistic jump below can be undone if the read fails.
+    const previous = { currentPath, entries }
 
     const cached = cache.get(path)
     set({ status: cached ? 'ready' : 'loading', error: null })
+    // Show the cached listing immediately, then revalidate.
     if (cached) set({ currentPath: path, entries: cached.entries })
 
     try {
@@ -101,23 +105,39 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
       }
       cache.set(listing.path, listing)
 
-      const nextHistory = options?.replaceHistory
-        ? history
-        : [...history.slice(0, historyIndex + 1), listing.path]
-
-      set({
-        currentPath: listing.path,
-        entries: listing.entries,
-        status: 'ready',
-        history: nextHistory,
-        historyIndex: nextHistory.length - 1,
-      })
+      /*
+       * `replaceHistory` means the caller owns the pointer — back, forward and
+       * refresh move within the existing history rather than extending it.
+       * Writing `historyIndex` here would snap it to the end of the stack and
+       * break the second press of Back.
+       */
+      set(
+        options?.replaceHistory
+          ? { currentPath: listing.path, entries: listing.entries, status: 'ready' }
+          : (() => {
+              const nextHistory = [...history.slice(0, historyIndex + 1), listing.path]
+              return {
+                currentPath: listing.path,
+                entries: listing.entries,
+                status: 'ready',
+                history: nextHistory,
+                historyIndex: nextHistory.length - 1,
+              }
+            })(),
+      )
 
       // Fire and forget: satellites pop in once the counts land.
       void get().enrichChildCounts(listing.path)
       return true
     } catch (error) {
-      set({ status: 'error', error: toMessage(error) })
+      // A failed navigation leaves the user exactly where they were — including
+      // undoing the optimistic jump into a cached listing that no longer exists.
+      set({
+        status: 'error',
+        error: toMessage(error),
+        currentPath: previous.currentPath,
+        entries: previous.entries,
+      })
       return false
     }
   },
@@ -150,18 +170,24 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
     }
   },
 
+  // The pointer moves only once the directory has actually loaded, so a failed
+  // step leaves history and the visible folder in agreement.
   async goBack() {
     const { history, historyIndex } = get()
     if (historyIndex <= 0) return
-    set({ historyIndex: historyIndex - 1 })
-    await get().navigateTo(history[historyIndex - 1]!, { replaceHistory: true })
+
+    if (await get().navigateTo(history[historyIndex - 1]!, { replaceHistory: true })) {
+      set({ historyIndex: historyIndex - 1 })
+    }
   },
 
   async goForward() {
     const { history, historyIndex } = get()
     if (historyIndex >= history.length - 1) return
-    set({ historyIndex: historyIndex + 1 })
-    await get().navigateTo(history[historyIndex + 1]!, { replaceHistory: true })
+
+    if (await get().navigateTo(history[historyIndex + 1]!, { replaceHistory: true })) {
+      set({ historyIndex: historyIndex + 1 })
+    }
   },
 
   async goUp() {
