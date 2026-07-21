@@ -11,12 +11,20 @@ export const GALAXY = {
   baseOrbitSpeed: 0.08,
   maxInclination: 0.18,
   /**
-   * Render budget per system. One mesh per body today, so a directory like
-   * C:\Windows\System32 (~5000 entries) would stall the frame. Raised once
-   * instanced rendering lands.
+   * Render budget per system.
+   *
+   * Files are instanced, so their cost is geometry rather than draw calls and
+   * the ceiling is high. Planets remain individual meshes with their own label
+   * and animation, so their budget stays comparatively tight.
    */
-  maxPlanets: 120,
-  maxMoons: 180,
+  maxPlanets: 220,
+  maxMoons: 2500,
+
+  /**
+   * Above this many planets, labels are shown only for the hovered or selected
+   * body. Two hundred overlapping captions are unreadable as well as expensive.
+   */
+  labelLimit: 60,
 } as const
 
 export const CAMERA = {

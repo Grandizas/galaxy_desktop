@@ -7,8 +7,6 @@ import { useOrbitalMotion } from '@/hooks/useOrbitalMotion'
 import type { CelestialBody } from '@/types'
 
 import { BodyLabel } from './BodyLabel'
-import { Moon } from './Moon'
-import { OrbitRing } from './OrbitRing'
 import { SelectionHalo } from './SelectionHalo'
 
 /** Scratch vector reused every frame — allocating in useFrame causes GC churn. */
@@ -21,6 +19,8 @@ export interface CelestialProps {
   dimmed?: boolean
   /** Position in the system, used to stagger the entrance animation. */
   index?: number
+  /** Dense systems label on hover only — see GALAXY.labelLimit. */
+  showLabel?: boolean
   /** `additive` is a Ctrl-click: toggle rather than replace the selection. */
   onSelect?: (body: CelestialBody, additive: boolean) => void
   /** Receives the body's current world position so the camera can fly to it. */
@@ -36,6 +36,7 @@ export function Planet({
   hovered = false,
   dimmed = false,
   index = 0,
+  showLabel = true,
   onSelect,
   onOpen,
   onHover,
@@ -58,15 +59,10 @@ export function Planet({
     onHover?.(isHovered ? body : null)
   }
 
+  // The orbit path is drawn by <OrbitRings>, which instances every ring in the
+  // system into a single mesh.
   return (
     <>
-      <OrbitRing
-        radius={body.orbit.radius}
-        inclination={body.orbit.inclination}
-        color={body.color}
-        opacity={selected ? 0.35 : 0.1}
-      />
-
       <group ref={groupRef}>
         {/* Separate group: orbital motion owns position, this owns entrance scale. */}
         <group ref={materializeRef}>
@@ -91,7 +87,9 @@ export function Planet({
             }}
             onPointerOut={() => handleHover(false)}
           >
-            <sphereGeometry args={[body.radius, 48, 48]} />
+            {/* 32 segments, not 48: at these radii the silhouette is identical
+                and it costs less than half the triangles. */}
+            <sphereGeometry args={[body.radius, 32, 24]} />
             <meshStandardMaterial
               color={body.color}
               emissive={body.color}
@@ -105,17 +103,17 @@ export function Planet({
 
           {selected && <SelectionHalo radius={body.radius * 1.8} />}
 
-          {body.satellites?.map((satellite) => (
-            <Moon key={satellite.id} body={satellite} dimmed={dimmed} />
-          ))}
+          {/* Satellites are drawn by <MoonField> in the shared instanced mesh. */}
 
-          <BodyLabel
-            label={body.label}
-            meta={body.meta}
-            offset={body.radius + 1.1}
-            detailed={hovered}
-            dimmed={dimmed}
-          />
+          {(showLabel || hovered || selected) && (
+            <BodyLabel
+              label={body.label}
+              meta={body.meta}
+              offset={body.radius + 1.1}
+              detailed={hovered}
+              dimmed={dimmed}
+            />
+          )}
         </group>
       </group>
     </>

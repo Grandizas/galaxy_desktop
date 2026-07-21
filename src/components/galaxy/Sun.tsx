@@ -24,16 +24,22 @@ export function Sun({ radius = GALAXY.sunRadius, pulseSpeed = 0.6 }: SunProps) {
     coreRef.current.scale.setScalar(pulse)
   })
 
+  /*
+   * The star is scenery, so nothing here may swallow a click. The corona in
+   * particular is a plane nine times the core's width, billboarded at the
+   * origin — exactly where the innermost files orbit. Left raycastable, it
+   * silently ate every click on a body behind it.
+   */
   return (
     <group>
-      <mesh ref={coreRef}>
-        <sphereGeometry args={[radius, 48, 48]} />
+      <mesh ref={coreRef} raycast={() => null}>
+        <sphereGeometry args={[radius, 32, 24]} />
         <meshBasicMaterial color={celestial.starCore} toneMapped={false} />
       </mesh>
 
       {/* Corona — a billboarded sprite reads better than a translucent sphere. */}
       <Billboard>
-        <mesh>
+        <mesh raycast={() => null}>
           <planeGeometry args={[radius * 9, radius * 9]} />
           <meshBasicMaterial
             map={glow}

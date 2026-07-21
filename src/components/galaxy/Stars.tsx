@@ -75,7 +75,8 @@ export function Stars({
   })
 
   return (
-    <points ref={pointsRef} frustumCulled={false}>
+    // Scenery: never a pointer target, or a star behind a body steals its click.
+    <points ref={pointsRef} frustumCulled={false} raycast={() => null}>
       <bufferGeometry>
         <primitive attach="attributes-position" object={new BufferAttribute(positions, 3)} />
         <primitive attach="attributes-color" object={new BufferAttribute(colors, 3)} />

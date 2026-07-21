@@ -48,7 +48,8 @@ export function ParticleField({
   })
 
   return (
-    <points ref={ref}>
+    // Dust is scenery — it must never intercept a click meant for a body.
+    <points ref={ref} raycast={() => null}>
       <bufferGeometry>
         <primitive attach="attributes-position" object={new BufferAttribute(positions, 3)} />
       </bufferGeometry>

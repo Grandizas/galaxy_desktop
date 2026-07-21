@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { Vector3 } from 'three'
 
 import { mapEntriesToGalaxy } from '@/features/filesystem/mapEntriesToGalaxy'
 import { useWarpTransition } from '@/features/navigation/useWarpTransition'
-import { STARFIELD } from '@/lib/constants'
+import { GALAXY, STARFIELD } from '@/lib/constants'
+import { env } from '@/lib/env'
 import { useFilesystemStore } from '@/store/filesystemStore'
 import { useSearchStore } from '@/store/searchStore'
 import { useSelectionStore } from '@/store/selectionStore'
@@ -12,8 +13,11 @@ import type { CelestialBody } from '@/types'
 import { basename } from '@/utils/path'
 
 import { CameraRig } from './CameraRig'
-import { Moon } from './Moon'
+import { MoonField } from './MoonField'
+import type { InstancedBody } from './interactiveBody'
+import { OrbitRings } from './OrbitRings'
 import { ParticleField } from './ParticleField'
+import { PerfProbe } from './PerfProbe'
 import { Planet } from './Planet'
 import { Stars } from './Stars'
 import { Sun } from './Sun'
@@ -34,14 +38,36 @@ export function GalaxyScene() {
 
   const query = useSearchStore((state) => state.query.trim().toLowerCase())
   const { enterSystem } = useWarpTransition()
+  const reducedMotion = useUiStore((state) => state.reducedMotion)
 
   const system = useMemo(
     () => mapEntriesToGalaxy(currentPath ?? '', basename(currentPath ?? ''), entries),
     [currentPath, entries],
   )
 
-  const isDimmed = (body: CelestialBody) =>
-    query.length > 0 && !body.label.toLowerCase().includes(query)
+  const isDimmed = useCallback(
+    (body: CelestialBody) => query.length > 0 && !body.label.toLowerCase().includes(query),
+    [query],
+  )
+
+  // Split once: the two groups render through completely different paths.
+  const { planets, instanced } = useMemo(() => {
+    const planets = system.bodies.filter((body) => body.type === 'planet')
+
+    // Loose files and every planet's satellites share one instanced mesh, so
+    // neither adds a draw call or a per-frame callback.
+    const instanced: InstancedBody[] = system.bodies
+      .filter((body) => body.type !== 'planet')
+      .map((body) => ({ body }))
+
+    for (const planet of planets) {
+      for (const satellite of planet.satellites ?? []) {
+        instanced.push({ body: satellite, parent: planet.orbit })
+      }
+    }
+
+    return { planets, instanced }
+  }, [system.bodies])
 
   const handleSelect = (body: CelestialBody, additive: boolean) =>
     select(body.id, additive ? 'toggle' : 'replace')
@@ -77,24 +103,40 @@ export function GalaxyScene() {
       <Sun />
       <ParticleField />
 
-      {system.bodies.map((body, index) => {
-        const props = {
-          body,
-          index,
-          selected: selected.has(body.id),
-          hovered: hoveredPath === body.id,
-          dimmed: isDimmed(body),
-          onSelect: handleSelect,
-          onOpen: handleOpen,
-          onContextMenu: handleContextMenu,
-          onHover: handleHover,
-        }
-        return body.type === 'planet' ? (
-          <Planet key={body.id} {...props} />
-        ) : (
-          <Moon key={body.id} {...props} />
-        )
-      })}
+      {env.enableDebug && <PerfProbe bodies={system.bodies.length} />}
+
+      {/* All orbit paths in one mesh. */}
+      <OrbitRings planets={planets} selected={selected} />
+
+      {/* Every file in one mesh — the count no longer scales with the folder. */}
+      <MoonField
+        bodies={instanced}
+        selected={selected}
+        hoveredPath={hoveredPath}
+        isDimmed={isDimmed}
+        frozen={reducedMotion}
+        onSelect={handleSelect}
+        onHover={handleHover}
+        onContextMenu={handleContextMenu}
+      />
+
+      {/* Planets stay individual: they carry labels, satellites and their own
+          entrance animation, and are capped at a count that stays cheap. */}
+      {planets.map((body, index) => (
+        <Planet
+          key={body.id}
+          body={body}
+          index={index}
+          selected={selected.has(body.id)}
+          hovered={hoveredPath === body.id}
+          dimmed={isDimmed(body)}
+          showLabel={planets.length <= GALAXY.labelLimit}
+          onSelect={handleSelect}
+          onOpen={handleOpen}
+          onContextMenu={handleContextMenu}
+          onHover={handleHover}
+        />
+      ))}
     </>
   )
 }
