@@ -49,7 +49,12 @@ interface FilesystemState {
 
 interface FilesystemActions {
   initialize: () => Promise<void>
-  navigateTo: (path: string, options?: { replaceHistory?: boolean }) => Promise<void>
+  /**
+   * Resolves `true` when the directory was read, `false` when it failed.
+   * Errors are caught and surfaced through `status`/`error` rather than thrown,
+   * so callers that care about the outcome must check the return value.
+   */
+  navigateTo: (path: string, options?: { replaceHistory?: boolean }) => Promise<boolean>
   goBack: () => Promise<void>
   goForward: () => Promise<void>
   goUp: () => Promise<void>
@@ -80,7 +85,7 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
 
   async navigateTo(path, options) {
     const { cache, history, historyIndex, currentPath } = get()
-    if (path === currentPath && get().status === 'ready') return
+    if (path === currentPath && get().status === 'ready') return true
 
     const cached = cache.get(path)
     set({ status: cached ? 'ready' : 'loading', error: null })
@@ -110,8 +115,10 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
 
       // Fire and forget: satellites pop in once the counts land.
       void get().enrichChildCounts(listing.path)
+      return true
     } catch (error) {
       set({ status: 'error', error: toMessage(error) })
+      return false
     }
   },
 

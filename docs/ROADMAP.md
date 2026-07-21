@@ -86,9 +86,21 @@ when the Tauri bridge is absent, so `pnpm dev` in a browser keeps working unchan
 | ✅ Back/forward/breadcrumb/sidebar fly rather than cut | A path-change effect triggers the arrival for any navigation that did not begin with a dive         |
 | ✅ `reducedMotion` honoured                            | `CameraRig` snaps, orbits freeze at their starting angle, starfield stops, entrances are instant    |
 
-**The load happens _during_ the dive**, not after it: `Promise.allSettled([navigateTo, wait(diveMs)])`
+**The load happens _during_ the dive**, not after it: `Promise.all([navigateTo, wait(diveMs)])`
 means the flight hides the directory read instead of adding to it. A slow folder simply holds the
-flash a little longer, and a failed read resets the view instead of stranding the camera mid-warp.
+flash a little longer.
+
+### 2.1 Review fixes ✅ done
+
+| Issue                                                                                                                                                    | Fix                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **The failure branch was dead code.** `navigateTo` catches its own errors, so `allSettled` always reported _fulfilled_ — a denied folder still "arrived" | `navigateTo` now returns `Promise<boolean>`; the transition inspects the result                      |
+| **`resetView` did not clear `warpPhase`**, so recovering from a failure left the white-out overlay on screen forever                                     | `resetView` returns the phase to `idle`; a `catch` guarantees recovery even from an unexpected throw |
+| **Reduced motion was ignored on indirect navigation.** Back/forward/breadcrumb/sidebar still played the flash                                            | The path-change effect ends the warp immediately when reduced motion is on                           |
+
+An earlier version of this document claimed a failed read "resets the view instead of stranding the
+camera mid-warp". That was **not true when written** — the branch could never execute. It is true now,
+and `filesystemStore.test.ts` covers it.
 
 **Layered animation.** Orbital position, entrance scale and hover scale are driven by three separate
 refs on nested groups. Sharing one object would make them fight for `scale` every frame.

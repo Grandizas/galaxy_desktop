@@ -45,7 +45,9 @@ export function GalaxyScene() {
   const handleHover = (body: CelestialBody | null) => setHovered(body?.id ?? null)
   const handleOpen = (body: CelestialBody, worldPosition: Vector3) => {
     if (body.type !== 'planet') return
-    void enterSystem(body.id, worldPosition.toArray())
+    // Built explicitly rather than via toArray(): that resolves to a tuple only
+    // through contextual overload selection, which is easy to break silently.
+    void enterSystem(body.id, [worldPosition.x, worldPosition.y, worldPosition.z])
   }
 
   return (

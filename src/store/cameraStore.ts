@@ -54,12 +54,15 @@ export const useCameraStore = create<CameraState & CameraActions>((set) => ({
   focusOn: (position, target = DEFAULT_TARGET) =>
     set({ position, target, isTransitioning: true, driftEnabled: false }),
 
+  // Clears `warpPhase` too: this is the "get me back to normal" action, and
+  // leaving a phase set would strand the white-out overlay on screen.
   resetView: () =>
     set({
       position: DEFAULT_POSITION,
       target: DEFAULT_TARGET,
       isTransitioning: true,
       driftEnabled: true,
+      warpPhase: 'idle',
     }),
 
   beginDive: (position, target) =>

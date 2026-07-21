@@ -51,8 +51,14 @@ export function useWarpTransition() {
 
     const camera = useCameraStore.getState()
     camera.arrive()
+
+    // Reduced motion gets the new position but never the flash.
+    if (reducedMotion) {
+      camera.endWarp()
+      return
+    }
     timers.current.push(setTimeout(() => useCameraStore.getState().endWarp(), WARP.flashMs))
-  }, [currentPath])
+  }, [currentPath, reducedMotion])
 
   const wait = (ms: number) =>
     new Promise<void>((resolve) => {
@@ -69,8 +75,7 @@ export function useWarpTransition() {
 
       try {
         if (reducedMotion || !bodyPosition) {
-          await navigateTo(path)
-          camera.arrive()
+          if (await navigateTo(path)) camera.arrive()
           camera.endWarp()
           return
         }
@@ -78,9 +83,13 @@ export function useWarpTransition() {
         camera.beginDive(computeDivePosition(camera.position, bodyPosition), bodyPosition)
 
         // Load and fly at the same time; the flight covers the read.
-        const [loaded] = await Promise.allSettled([navigateTo(path), wait(WARP.diveMs)])
+        // `navigateTo` reports failure by resolving false — it never rejects —
+        // so the result has to be inspected, not merely awaited.
+        const [loaded] = await Promise.all([navigateTo(path), wait(WARP.diveMs)])
 
-        if (loaded.status === 'rejected') {
+        if (!loaded) {
+          // Permission denied, or the folder vanished. Fly back out rather than
+          // arriving in a system that was never loaded.
           camera.resetView()
           return
         }
@@ -88,6 +97,11 @@ export function useWarpTransition() {
         camera.arrive()
         await wait(WARP.flashMs)
         camera.endWarp()
+      } catch (error) {
+        // Nothing above is expected to throw, but a stuck white-out overlay
+        // would make the app look frozen. Always fly back to a sane view.
+        console.error('[galaxy] warp transition failed', error)
+        camera.resetView()
       } finally {
         inFlight.current = false
       }
