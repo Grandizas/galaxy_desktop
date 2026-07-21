@@ -1,4 +1,5 @@
 mod filesystem;
+mod safety;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -11,6 +12,9 @@ pub fn run() {
             filesystem::list_directory,
             filesystem::list_drives,
             filesystem::count_children,
+            filesystem::create_directory,
+            filesystem::rename_entry,
+            filesystem::delete_entries,
             filesystem::reveal_in_explorer,
         ])
         .run(tauri::generate_context!())

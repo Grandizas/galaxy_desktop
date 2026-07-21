@@ -6,6 +6,8 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { StatusBar } from '@/components/layout/StatusBar'
 import { Toolbar } from '@/components/layout/Toolbar'
 import { WindowLayout } from '@/components/layout/WindowLayout'
+import { ExplorerOverlays } from '@/features/explorer/ExplorerOverlays'
+import { NewFolderButton } from '@/features/explorer/NewFolderButton'
 import { InspectorPanel } from '@/features/inspector/InspectorPanel'
 import { useDirectory } from '@/features/filesystem/useDirectory'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
@@ -13,7 +15,8 @@ import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 import { useCameraStore } from '@/store/cameraStore'
 import { useFilesystemStore } from '@/store/filesystemStore'
 import { useSearchStore } from '@/store/searchStore'
-import { useSelectionStore } from '@/store/selectionStore'
+import { selectPrimarySelection, useSelectionStore } from '@/store/selectionStore'
+import { useUiStore } from '@/store/uiStore'
 
 /**
  * Persistent shell. The galaxy lives here rather than inside a route so the
@@ -25,8 +28,18 @@ export function AppShell() {
 
   useKeyboardShortcuts({
     escape: () => {
+      useUiStore.getState().closeContextMenu()
+      useUiStore.getState().requestDeletion(null)
       useSelectionStore.getState().clear()
       useSearchStore.getState().reset()
+    },
+    f2: () => {
+      const target = selectPrimarySelection(useSelectionStore.getState())
+      if (target) useUiStore.getState().startRename(target)
+    },
+    delete: () => {
+      const { selected } = useSelectionStore.getState()
+      if (selected.size > 0) useUiStore.getState().requestDeletion([...selected])
     },
     'alt+arrowleft': () => void useFilesystemStore.getState().goBack(),
     'alt+arrowright': () => void useFilesystemStore.getState().goForward(),
@@ -41,9 +54,13 @@ export function AppShell() {
       nav={<Sidebar />}
       overlay={<Toolbar />}
       info={<InspectorPanel />}
+      actions={<NewFolderButton />}
       statusBar={<StatusBar />}
     >
       <GalaxyCanvas />
+
+      {/* Context menu and delete confirmation. */}
+      <ExplorerOverlays />
 
       {/* Routed pages render as overlays above the galaxy. */}
       <Outlet />

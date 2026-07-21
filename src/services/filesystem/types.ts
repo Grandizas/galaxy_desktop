@@ -1,4 +1,4 @@
-import type { DirectoryListing, DriveInfo } from '@/types'
+import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
 
 /**
  * The single contract the UI knows about. Swapping the mock provider for the
@@ -19,6 +19,16 @@ export interface FileSystemService {
    * galaxy is never blocked on it; unreadable directories are simply absent.
    */
   countChildren(paths: readonly string[]): Promise<Record<string, number>>
+
+  createDirectory(parent: string, name: string): Promise<FsEntry>
+
+  renameEntry(path: string, newName: string): Promise<FsEntry>
+
+  /**
+   * Moves entries to the Recycle Bin — never a permanent delete.
+   * Rejects the whole batch if any path is protected.
+   */
+  deleteEntries(paths: readonly string[]): Promise<readonly string[]>
 
   /** Opens an entry with the OS default handler. */
   openEntry(path: string): Promise<void>

@@ -210,6 +210,64 @@ fn volume_label(root: &str) -> Option<String> {
     (!label.trim().is_empty()).then_some(label)
 }
 
+/// Creates a directory, returning the entry so the UI can select it.
+#[tauri::command]
+pub async fn create_directory(parent: String, name: String) -> Result<Entry, String> {
+    off_thread(move || make_directory(&parent, &name)).await?
+}
+
+fn make_directory(parent: &str, name: &str) -> Result<Entry, String> {
+    crate::safety::validate_file_name(name)?;
+
+    let target = PathBuf::from(parent).join(name.trim());
+    if target.exists() {
+        return Err(format!("\"{}\" already exists here", name.trim()));
+    }
+
+    fs::create_dir(&target).map_err(|e| format!("Could not create the folder: {e}"))?;
+    to_entry(&target).ok_or_else(|| "Folder created but could not be read".to_string())
+}
+
+#[tauri::command]
+pub async fn rename_entry(path: String, new_name: String) -> Result<Entry, String> {
+    off_thread(move || rename_path(&path, &new_name)).await?
+}
+
+fn rename_path(path: &str, new_name: &str) -> Result<Entry, String> {
+    let source = PathBuf::from(path);
+    let target = crate::safety::resolve_rename_target(&source, new_name)?;
+
+    if target == source {
+        return to_entry(&source).ok_or_else(|| "Entry could not be read".to_string());
+    }
+
+    fs::rename(&source, &target).map_err(|e| format!("Could not rename: {e}"))?;
+    to_entry(&target).ok_or_else(|| "Renamed but could not be read".to_string())
+}
+
+/// Moves entries to the Recycle Bin.
+///
+/// Never a permanent delete: `trash` hands the operation to the shell, so
+/// anything removed here can be restored by the user. Each path is validated
+/// first — see `safety::validate_deletable`.
+#[tauri::command]
+pub async fn delete_entries(paths: Vec<String>) -> Result<Vec<String>, String> {
+    off_thread(move || trash_paths(paths)).await?
+}
+
+fn trash_paths(paths: Vec<String>) -> Result<Vec<String>, String> {
+    let targets: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+
+    // Validate everything before touching anything, so a rejected path in the
+    // middle of a multi-select cannot leave the operation half-applied.
+    for target in &targets {
+        crate::safety::validate_deletable(target)?;
+    }
+
+    trash::delete_all(&targets).map_err(|e| format!("Could not move to the Recycle Bin: {e}"))?;
+    Ok(paths)
+}
+
 /// Opens Windows Explorer with the entry pre-selected.
 #[tauri::command]
 pub fn reveal_in_explorer(path: String) -> Result<(), String> {
@@ -302,5 +360,84 @@ mod tests {
     fn missing_directory_returns_an_error_rather_than_panicking() {
         let result = read_directory(r"C:\definitely-not-a-real-path-9f2a".to_string());
         assert!(result.is_err());
+    }
+
+    /// Scratch directory under the OS temp dir, removed on drop.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("galaxy-test-{tag}"));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).expect("scratch dir");
+            Self(dir)
+        }
+        fn path(&self) -> &str {
+            self.0.to_str().unwrap()
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn creates_a_directory_and_reports_it() {
+        let scratch = Scratch::new("create");
+
+        let entry = make_directory(scratch.path(), "New World").expect("should create");
+        assert!(entry.is_directory);
+        assert_eq!(entry.name, "New World");
+        assert!(PathBuf::from(&entry.path).is_dir());
+
+        // Creating the same name twice must fail rather than silently succeed.
+        assert!(make_directory(scratch.path(), "New World").is_err());
+    }
+
+    #[test]
+    fn refuses_to_create_outside_the_parent_directory() {
+        let scratch = Scratch::new("escape");
+
+        assert!(make_directory(scratch.path(), "..\\escaped").is_err());
+        assert!(make_directory(scratch.path(), "nested/dir").is_err());
+        assert!(!scratch.0.parent().unwrap().join("escaped").exists());
+    }
+
+    #[test]
+    fn renames_within_the_same_directory() {
+        let scratch = Scratch::new("rename");
+        let created = make_directory(scratch.path(), "before").unwrap();
+
+        let renamed = rename_path(&created.path, "after").expect("should rename");
+        assert_eq!(renamed.name, "after");
+        assert!(!PathBuf::from(&created.path).exists());
+        assert!(PathBuf::from(&renamed.path).is_dir());
+    }
+
+    #[test]
+    fn refuses_a_rename_that_would_clobber_an_existing_entry() {
+        let scratch = Scratch::new("clobber");
+        let a = make_directory(scratch.path(), "alpha").unwrap();
+        make_directory(scratch.path(), "beta").unwrap();
+
+        assert!(rename_path(&a.path, "beta").is_err());
+        assert!(PathBuf::from(&a.path).is_dir(), "original must survive");
+    }
+
+    #[test]
+    fn delete_validates_every_path_before_removing_any() {
+        let scratch = Scratch::new("atomic-delete");
+        let doomed = make_directory(scratch.path(), "doomed").unwrap();
+
+        // One protected path in the batch must abort the whole operation.
+        let result = trash_paths(vec![doomed.path.clone(), "C:\\Windows".to_string()]);
+
+        assert!(result.is_err());
+        assert!(
+            PathBuf::from(&doomed.path).is_dir(),
+            "nothing may be deleted when validation fails"
+        );
     }
 }

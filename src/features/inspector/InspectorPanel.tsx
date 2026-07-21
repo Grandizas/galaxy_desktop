@@ -10,6 +10,7 @@ import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { formatBytes, formatCount, formatDate } from '@/utils/format'
 
+import { RenameField } from './RenameField'
 import { useInspectedEntry } from './useInspectedEntry'
 
 /** Right-hand detail panel for the targeted celestial body. */
@@ -18,6 +19,9 @@ export function InspectorPanel() {
   const navigateTo = useFilesystemStore((state) => state.navigateTo)
   const clearSelection = useSelectionStore((state) => state.clear)
   const pushToast = useUiStore((state) => state.pushToast)
+  const renamingPath = useUiStore((state) => state.renamingPath)
+  const startRename = useUiStore((state) => state.startRename)
+  const requestDeletion = useUiStore((state) => state.requestDeletion)
 
   return (
     <AnimatePresence>
@@ -30,9 +34,13 @@ export function InspectorPanel() {
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         >
           <Panel title="Inspector" className="max-h-[calc(100vh-200px)]">
-            <h3 className="px-1 pt-1 text-center text-[16.5px] font-medium wrap-anywhere">
-              {entry.name}
-            </h3>
+            {renamingPath === entry.path ? (
+              <RenameField entry={entry} />
+            ) : (
+              <h3 className="px-1 pt-1 text-center text-[16.5px] font-medium wrap-anywhere">
+                {entry.name}
+              </h3>
+            )}
 
             <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-1 font-mono text-[10.5px]">
               <Row label="TYPE" value={ENTRY_KIND_LABEL[entry.kind]} />
@@ -85,9 +93,26 @@ export function InspectorPanel() {
                 variant="ghost"
                 size="sm"
                 className="justify-start"
+                onClick={() => startRename(entry.path)}
+              >
+                Rename
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="justify-start"
                 onClick={() => clearSelection()}
               >
                 Deselect
+              </Button>
+              <div className="my-1 h-px bg-border" />
+              <Button
+                variant="danger"
+                size="sm"
+                className="justify-start"
+                onClick={() => requestDeletion([entry.path])}
+              >
+                Delete
               </Button>
             </div>
           </Panel>
