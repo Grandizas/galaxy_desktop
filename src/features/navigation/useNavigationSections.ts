@@ -32,7 +32,7 @@ export function useNavigationSections(): NavSection[] {
   const currentPath = useFilesystemStore((state) => state.currentPath)
   const drives = useFilesystemStore((state) => state.drives)
   const navigateTo = useFilesystemStore((state) => state.navigateTo)
-  const homePath = useFilesystemStore((state) => state.history[0] ?? null)
+  const homePath = useFilesystemStore((state) => state.homePath)
   const pushToast = useUiStore((state) => state.pushToast)
 
   return useMemo(() => {

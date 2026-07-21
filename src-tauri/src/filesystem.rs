@@ -122,14 +122,48 @@ fn windows_drives() -> Vec<Drive> {
                 )
             } != 0;
 
+            let label = volume_label(&root)
+                .map(|name| format!("{name} ({letter}:)"))
+                .unwrap_or_else(|| format!("Local Disk ({letter}:)"));
+
             Drive {
-                label: format!("Local Disk ({letter}:)"),
+                label,
                 path: root,
                 total_bytes: ok.then_some(total),
                 free_bytes: ok.then_some(free),
             }
         })
         .collect()
+}
+
+/// Volume label from the OS, falling back to a generic name.
+#[cfg(windows)]
+fn volume_label(root: &str) -> Option<String> {
+    use windows_sys::Win32::Storage::FileSystem::GetVolumeInformationW;
+
+    let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut name = [0u16; 261];
+
+    let ok = unsafe {
+        GetVolumeInformationW(
+            wide.as_ptr(),
+            name.as_mut_ptr(),
+            name.len() as u32,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0;
+
+    if !ok {
+        return None;
+    }
+
+    let end = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+    let label = String::from_utf16_lossy(&name[..end]);
+    (!label.trim().is_empty()).then_some(label)
 }
 
 /// Opens Windows Explorer with the entry pre-selected.
@@ -148,5 +182,61 @@ pub fn reveal_in_explorer(path: String) -> Result<(), String> {
     {
         let _ = path;
         Err("Revealing entries is only supported on Windows".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn home_dir_resolves_to_an_existing_directory() {
+        let home = get_home_dir().expect("home directory should resolve");
+        assert!(
+            PathBuf::from(&home).is_dir(),
+            "home directory does not exist: {home}"
+        );
+    }
+
+    #[test]
+    fn lists_at_least_one_drive_with_a_plausible_size() {
+        let drives = list_drives();
+        assert!(!drives.is_empty(), "expected at least one drive");
+
+        let system = drives
+            .iter()
+            .find(|d| d.path.starts_with('C') || d.path == "/")
+            .expect("expected a system drive");
+
+        // Proves the FFI wrote through the out-pointers rather than silently failing.
+        let total = system.total_bytes.expect("total size should be readable");
+        let free = system.free_bytes.expect("free size should be readable");
+        assert!(total > 0, "total size must be positive");
+        assert!(free <= total, "free ({free}) cannot exceed total ({total})");
+    }
+
+    #[test]
+    fn lists_the_home_directory_with_folders_sorted_first() {
+        let home = get_home_dir().unwrap();
+        let entries = list_directory(home.clone()).expect("home should be readable");
+
+        let first_file = entries.iter().position(|e| !e.is_directory);
+        let last_dir = entries.iter().rposition(|e| e.is_directory);
+        if let (Some(file), Some(dir)) = (first_file, last_dir) {
+            assert!(file > dir, "directories must sort before files");
+        }
+
+        for entry in &entries {
+            assert!(entry.path.ends_with(&entry.name), "path must end with name");
+            if entry.is_directory {
+                assert!(entry.size.is_none(), "directories report no size");
+            }
+        }
+    }
+
+    #[test]
+    fn missing_directory_returns_an_error_rather_than_panicking() {
+        let result = list_directory(r"C:\definitely-not-a-real-path-9f2a".to_string());
+        assert!(result.is_err());
     }
 }

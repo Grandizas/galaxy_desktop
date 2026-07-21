@@ -2,11 +2,13 @@ import { create } from 'zustand'
 
 import { getFileSystemService } from '@/services/filesystem'
 import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
-import { dirname } from '@/utils/path'
+import { dirname, normalizePath } from '@/utils/path'
 
 interface FilesystemState {
   /** Directory currently rendered as a solar system. */
   currentPath: string | null
+  /** The user's home directory, resolved once at startup. */
+  homePath: string | null
   entries: readonly FsEntry[]
   drives: readonly DriveInfo[]
   status: 'idle' | 'loading' | 'ready' | 'error'
@@ -31,6 +33,7 @@ export type FilesystemStore = FilesystemState & FilesystemActions
 
 export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
   currentPath: null,
+  homePath: null,
   entries: [],
   drives: [],
   status: 'idle',
@@ -42,7 +45,7 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
   async initialize() {
     const fs = getFileSystemService()
     const [home, drives] = await Promise.all([fs.getHomePath(), fs.listDrives()])
-    set({ drives })
+    set({ drives, homePath: normalizePath(home) })
     await get().navigateTo(home)
   },
 
