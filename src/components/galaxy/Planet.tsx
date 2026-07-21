@@ -1,7 +1,8 @@
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
-import { Vector3, type Mesh } from 'three'
+import { Vector3, type Group, type Mesh } from 'three'
 
+import { useMaterialize } from '@/hooks/useMaterialize'
 import { useOrbitalMotion } from '@/hooks/useOrbitalMotion'
 import type { CelestialBody } from '@/types'
 
@@ -18,8 +19,11 @@ export interface CelestialProps {
   selected?: boolean
   hovered?: boolean
   dimmed?: boolean
+  /** Position in the system, used to stagger the entrance animation. */
+  index?: number
   onSelect?: (body: CelestialBody) => void
-  onOpen?: (body: CelestialBody) => void
+  /** Receives the body's current world position so the camera can fly to it. */
+  onOpen?: (body: CelestialBody, worldPosition: Vector3) => void
   onHover?: (body: CelestialBody | null) => void
 }
 
@@ -29,11 +33,13 @@ export function Planet({
   selected = false,
   hovered = false,
   dimmed = false,
+  index = 0,
   onSelect,
   onOpen,
   onHover,
 }: CelestialProps) {
   const groupRef = useOrbitalMotion(body.orbit)
+  const materializeRef = useMaterialize<Group>(index)
   const meshRef = useRef<Mesh>(null)
 
   useFrame((_, delta) => {
@@ -59,47 +65,51 @@ export function Planet({
       />
 
       <group ref={groupRef}>
-        <mesh
-          ref={meshRef}
-          onClick={(event) => {
-            event.stopPropagation()
-            onSelect?.(body)
-          }}
-          onDoubleClick={(event) => {
-            event.stopPropagation()
-            onOpen?.(body)
-          }}
-          onPointerOver={(event) => {
-            event.stopPropagation()
-            handleHover(true)
-          }}
-          onPointerOut={() => handleHover(false)}
-        >
-          <sphereGeometry args={[body.radius, 48, 48]} />
-          <meshStandardMaterial
-            color={body.color}
-            emissive={body.color}
-            emissiveIntensity={dimmed ? 0.05 : body.emissive}
-            roughness={0.55}
-            metalness={0.15}
-            transparent
-            opacity={dimmed ? 0.25 : 1}
+        {/* Separate group: orbital motion owns position, this owns entrance scale. */}
+        <group ref={materializeRef}>
+          <mesh
+            ref={meshRef}
+            onClick={(event) => {
+              event.stopPropagation()
+              onSelect?.(body)
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation()
+              // Planets orbit, so the camera needs where it is *now*.
+              onOpen?.(body, groupRef.current!.getWorldPosition(new Vector3()))
+            }}
+            onPointerOver={(event) => {
+              event.stopPropagation()
+              handleHover(true)
+            }}
+            onPointerOut={() => handleHover(false)}
+          >
+            <sphereGeometry args={[body.radius, 48, 48]} />
+            <meshStandardMaterial
+              color={body.color}
+              emissive={body.color}
+              emissiveIntensity={dimmed ? 0.05 : body.emissive}
+              roughness={0.55}
+              metalness={0.15}
+              transparent
+              opacity={dimmed ? 0.25 : 1}
+            />
+          </mesh>
+
+          {selected && <SelectionHalo radius={body.radius * 1.8} />}
+
+          {body.satellites?.map((satellite) => (
+            <Moon key={satellite.id} body={satellite} dimmed={dimmed} />
+          ))}
+
+          <BodyLabel
+            label={body.label}
+            meta={body.meta}
+            offset={body.radius + 1.1}
+            detailed={hovered}
+            dimmed={dimmed}
           />
-        </mesh>
-
-        {selected && <SelectionHalo radius={body.radius * 1.8} />}
-
-        {body.satellites?.map((satellite) => (
-          <Moon key={satellite.id} body={satellite} dimmed={dimmed} />
-        ))}
-
-        <BodyLabel
-          label={body.label}
-          meta={body.meta}
-          offset={body.radius + 1.1}
-          detailed={hovered}
-          dimmed={dimmed}
-        />
+        </group>
       </group>
     </>
   )

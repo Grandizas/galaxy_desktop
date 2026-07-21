@@ -5,6 +5,7 @@ import { Vector3 } from 'three'
 
 import { CAMERA } from '@/lib/constants'
 import { useCameraStore } from '@/store/cameraStore'
+import { useUiStore } from '@/store/uiStore'
 
 const desiredPosition = new Vector3()
 const desiredTarget = new Vector3()
@@ -22,7 +23,9 @@ export function CameraRig() {
   const isTransitioning = useCameraStore((state) => state.isTransitioning)
   const driftEnabled = useCameraStore((state) => state.driftEnabled)
   const autoRotate = useCameraStore((state) => state.autoRotate)
+  const warpPhase = useCameraStore((state) => state.warpPhase)
   const setTransitioning = useCameraStore((state) => state.setTransitioning)
+  const reducedMotion = useUiStore((state) => state.reducedMotion)
 
   useFrame(({ clock }, delta) => {
     const controls = controlsRef.current
@@ -32,7 +35,17 @@ export function CameraRig() {
       desiredPosition.set(...position)
       desiredTarget.set(...target)
 
-      const ease = Math.min(delta * 2.4, 1)
+      if (reducedMotion) {
+        camera.position.copy(desiredPosition)
+        controls.target.copy(desiredTarget)
+        setTransitioning(false)
+        controls.update()
+        return
+      }
+
+      // The dive accelerates; everything else eases out gently.
+      const speed = warpPhase === 'dive' ? 3.6 : 2.4
+      const ease = Math.min(delta * speed, 1)
       camera.position.lerp(desiredPosition, ease)
       controls.target.lerp(desiredTarget, ease)
 
@@ -41,7 +54,7 @@ export function CameraRig() {
         controls.target.copy(desiredTarget)
         setTransitioning(false)
       }
-    } else if (driftEnabled) {
+    } else if (driftEnabled && !reducedMotion) {
       // Barely-there sway; enough to read as "alive" without inducing nausea.
       const t = (clock.elapsedTime * Math.PI * 2) / CAMERA.driftPeriod
       controls.target.y = target[1] + Math.sin(t) * CAMERA.driftAmplitude * 0.35

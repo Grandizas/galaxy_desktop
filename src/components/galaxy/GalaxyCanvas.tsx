@@ -8,6 +8,7 @@ import { useSelectionStore } from '@/store/selectionStore'
 
 import { GalaxyScene } from './GalaxyScene'
 import { Nebula } from './Nebula'
+import { WarpFlash } from './WarpFlash'
 
 /**
  * Owns the WebGL context and everything that must sit outside the scene graph:
@@ -46,6 +47,7 @@ export function GalaxyCanvas() {
 
       {/* Drawn over the render target so the clouds tint the whole scene. */}
       <Nebula />
+      <WarpFlash />
     </div>
   )
 }
