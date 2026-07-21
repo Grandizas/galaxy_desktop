@@ -1,5 +1,6 @@
 import { ENTRY_KIND_LABEL } from '@/lib/classify'
 import { GALAXY } from '@/lib/constants'
+import { byRecency } from '@/utils/entries'
 import { formatBytes, formatCount } from '@/utils/format'
 import { planetPalette } from '@/styles/theme'
 import type { CelestialBody, EntryKind, FsEntry, GalaxySystem } from '@/types'
@@ -109,13 +110,6 @@ export function mapEntriesToGalaxy(
   })
 
   return { path, label, bodies: [...planets, ...moons], hiddenCount }
-}
-
-/** Most recently modified first; undated entries sort last, name-ordered. */
-function byRecency(entries: readonly FsEntry[], limit: number): FsEntry[] {
-  return [...entries]
-    .sort((a, b) => (b.modifiedAt ?? 0) - (a.modifiedAt ?? 0) || a.name.localeCompare(b.name))
-    .slice(0, limit)
 }
 
 /** Placeholder satellites hinting at a folder's contents before it is read. */

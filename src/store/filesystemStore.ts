@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { getFileSystemService } from '@/services/filesystem'
 import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
 import { FsError } from '@/types'
+import { byRecency, mergeChildCounts } from '@/utils/entries'
 import { basename, dirname, normalizePath } from '@/utils/path'
 
 /**
@@ -86,7 +87,13 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
     if (cached) set({ currentPath: path, entries: cached.entries })
 
     try {
-      const listing = await getFileSystemService().listDirectory(path)
+      const fetched = await getFileSystemService().listDirectory(path)
+
+      // Carry known child counts across, or satellites blink out on revisit.
+      const listing: DirectoryListing = {
+        ...fetched,
+        entries: cached ? mergeChildCounts(fetched.entries, cached.entries) : fetched.entries,
+      }
       cache.set(listing.path, listing)
 
       const nextHistory = options?.replaceHistory
@@ -109,10 +116,12 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
   },
 
   async enrichChildCounts(path) {
-    const directories = get()
-      .entries.filter((entry) => entry.isDirectory && entry.childCount === undefined)
-      .slice(0, CHILD_COUNT_LIMIT)
-      .map((entry) => entry.path)
+    // Same ordering the renderer uses to pick its planets, so the directories
+    // we enrich are the ones actually on screen.
+    const directories = byRecency(
+      get().entries.filter((entry) => entry.isDirectory && entry.childCount === undefined),
+      CHILD_COUNT_LIMIT,
+    ).map((entry) => entry.path)
 
     if (directories.length === 0) return
 

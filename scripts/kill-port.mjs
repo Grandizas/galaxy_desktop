@@ -32,10 +32,17 @@ function findListeners() {
   try {
     const output = execFileSync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], {
       encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
     return [...new Set(output.split(/\s+/).filter(Boolean))]
-  } catch {
-    return [] // lsof exits non-zero when nothing matches
+  } catch (error) {
+    // Exit status 1 with no output is lsof's normal "nothing matched".
+    if (error.code === 'ENOENT') {
+      console.warn(`lsof is not installed — cannot inspect port ${port}.`)
+    } else if (error.status !== 1) {
+      console.warn(`lsof failed (status ${error.status}): ${String(error.stderr ?? '').trim()}`)
+    }
+    return []
   }
 }
 

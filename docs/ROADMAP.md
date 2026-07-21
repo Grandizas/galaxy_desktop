@@ -63,6 +63,17 @@ when the Tauri bridge is absent, so `pnpm dev` in a browser keeps working unchan
 **Remaining before Phase 1 is closed:** confirm on a genuinely huge directory
 (`C:\Windows\System32`) that the frame rate holds.
 
+### 1.4 Fixes from the first review pass ✅ done
+
+| Issue                                                                                                                 | Fix                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Disk I/O ran on the main thread.** Tauri executes sync commands there, so reading System32 froze the window         | Every disk-touching command is now `async` and delegates to `spawn_blocking` via `off_thread()`        |
+| **Similar names collapsed onto one bearing.** A polynomial hash gave `ms-MY`/`ms-MT`/`nl-NL` the same angle           | murmur3 avalanche in `hashString`, plus golden-angle placement so alignment is structurally impossible |
+| **Large systems stretched past the camera.** Linear orbit spacing put planet 120 at radius 663 with `maxDistance` 160 | √-based spacing keeps the outermost orbit under 110                                                    |
+| **Satellites blinked on revisit.** A cached listing's `childCount` was overwritten by the fresh fetch                 | `mergeChildCounts()` carries known counts across                                                       |
+| **Enriched folders ≠ rendered folders.** The store sliced alphabetically while the renderer picked by recency         | Both now share `byRecency()` from `utils/entries`                                                      |
+| `lsof` failures silently swallowed in `kill-port`                                                                     | Distinguishes "no match" from a missing binary or real failure                                         |
+
 ---
 
 ## Phase 2 — Make navigation feel cinematic
