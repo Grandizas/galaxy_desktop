@@ -31,6 +31,23 @@ export const CAMERA = {
   driftPeriod: 24,
 } as const
 
+/**
+ * Timings for the flight between folders, in milliseconds.
+ * The phases overlap deliberately: the flash peaks while the camera is still
+ * accelerating, so the cut to the new system is hidden inside the glare.
+ */
+export const WARP = {
+  /** Camera accelerates towards the target planet. */
+  diveMs: 620,
+  /** White-out holds while the new directory loads. */
+  flashMs: 260,
+  /** Bodies materialise on arrival, staggered by index. */
+  emergeMs: 700,
+  staggerMs: 28,
+  /** How close the camera gets to the target, as a fraction of the distance. */
+  diveApproach: 0.82,
+} as const
+
 export const STARFIELD = {
   radius: 900,
   depth: 700,

@@ -6,6 +6,7 @@ import { AdditiveBlending, BufferAttribute, Color } from 'three'
 import { env } from '@/lib/env'
 import { STARFIELD } from '@/lib/constants'
 import { createSpriteTexture } from '@/lib/three/textures'
+import { useUiStore } from '@/store/uiStore'
 import { celestial } from '@/styles/theme'
 import { createRandom } from '@/utils/random'
 
@@ -64,9 +65,11 @@ export function Stars({
     return { positions, colors, sizes }
   }, [count, radius, tint, seed])
 
+  const reducedMotion = useUiStore((state) => state.reducedMotion)
+
   useFrame((_, delta) => {
     const points = pointsRef.current
-    if (!points) return
+    if (!points || reducedMotion) return
     points.rotation.y += delta * STARFIELD.rotationSpeed * speed
     points.rotation.x += delta * STARFIELD.rotationSpeed * speed * 0.25
   })

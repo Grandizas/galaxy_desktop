@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
+import type { Vector3 } from 'three'
 
 import { mapEntriesToGalaxy } from '@/features/filesystem/mapEntriesToGalaxy'
+import { useWarpTransition } from '@/features/navigation/useWarpTransition'
 import { STARFIELD } from '@/lib/constants'
 import { useFilesystemStore } from '@/store/filesystemStore'
 import { useSearchStore } from '@/store/searchStore'
@@ -22,7 +24,6 @@ import { Sun } from './Sun'
 export function GalaxyScene() {
   const currentPath = useFilesystemStore((state) => state.currentPath)
   const entries = useFilesystemStore((state) => state.entries)
-  const navigateTo = useFilesystemStore((state) => state.navigateTo)
 
   const selected = useSelectionStore((state) => state.selected)
   const select = useSelectionStore((state) => state.select)
@@ -30,6 +31,7 @@ export function GalaxyScene() {
   const hoveredPath = useSelectionStore((state) => state.hovered)
 
   const query = useSearchStore((state) => state.query.trim().toLowerCase())
+  const { enterSystem } = useWarpTransition()
 
   const system = useMemo(
     () => mapEntriesToGalaxy(currentPath ?? '', basename(currentPath ?? ''), entries),
@@ -41,8 +43,11 @@ export function GalaxyScene() {
 
   const handleSelect = (body: CelestialBody) => select(body.id)
   const handleHover = (body: CelestialBody | null) => setHovered(body?.id ?? null)
-  const handleOpen = (body: CelestialBody) => {
-    if (body.type === 'planet') void navigateTo(body.id)
+  const handleOpen = (body: CelestialBody, worldPosition: Vector3) => {
+    if (body.type !== 'planet') return
+    // Built explicitly rather than via toArray(): that resolves to a tuple only
+    // through contextual overload selection, which is easy to break silently.
+    void enterSystem(body.id, [worldPosition.x, worldPosition.y, worldPosition.z])
   }
 
   return (
@@ -60,9 +65,10 @@ export function GalaxyScene() {
       <Sun />
       <ParticleField />
 
-      {system.bodies.map((body) => {
+      {system.bodies.map((body, index) => {
         const props = {
           body,
+          index,
           selected: selected.has(body.id),
           hovered: hoveredPath === body.id,
           dimmed: isDimmed(body),

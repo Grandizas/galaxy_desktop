@@ -76,20 +76,49 @@ when the Tauri bridge is absent, so `pnpm dev` in a browser keeps working unchan
 
 ---
 
-## Phase 2 — Make navigation feel cinematic
+## Phase 2 — Make navigation feel cinematic ✅ done
 
-The camera plumbing exists (`cameraStore.focusOn`, `CameraRig` easing) but **nothing calls it**
-except the reset shortcut.
+| Task                                                   | Result                                                                                              |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| ✅ Double-click a planet → fly into it                 | `Planet` reports its **live world position** (it is orbiting, so the stored orbit is already stale) |
+| ✅ Warp transition                                     | `useWarpTransition`: dive → flash → emerge, in `features/navigation`                                |
+| ✅ Staggered entrance on arrival                       | `useMaterialize`, ref-driven so 300 bodies do not re-render per frame                               |
+| ✅ Back/forward/breadcrumb/sidebar fly rather than cut | A path-change effect triggers the arrival for any navigation that did not begin with a dive         |
+| ✅ `reducedMotion` honoured                            | `CameraRig` snaps, orbits freeze at their starting angle, starfield stops, entrances are instant    |
 
-| Task                                                                                    | Where                                            |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Double-click a planet → fly the camera to it, then warp into the new system             | `GalaxyScene.handleOpen` → `focusOn`             |
-| Warp transition: accelerate towards the planet, white-out, materialise the child system | new `useWarpTransition` in `features/navigation` |
-| Stagger body entrance on arrival (the design's `materialize` animation)                 | `Planet` / `Moon` mount animation                |
-| Back/forward should fly, not cut                                                        | `filesystemStore.goBack/goForward`               |
-| Honour `uiStore.reducedMotion` in the scene — it is currently stored but never read     | `CameraRig`, `Stars`, `useOrbitalMotion`         |
+**The load happens _during_ the dive**, not after it: `Promise.all([navigateTo, wait(diveMs)])`
+means the flight hides the directory read instead of adding to it. A slow folder simply holds the
+flash a little longer.
 
-**Done when:** entering and leaving a folder reads as one continuous flight.
+### 2.1 Review fixes ✅ done
+
+| Issue                                                                                                                                                    | Fix                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **The failure branch was dead code.** `navigateTo` catches its own errors, so `allSettled` always reported _fulfilled_ — a denied folder still "arrived" | `navigateTo` now returns `Promise<boolean>`; the transition inspects the result                      |
+| **`resetView` did not clear `warpPhase`**, so recovering from a failure left the white-out overlay on screen forever                                     | `resetView` returns the phase to `idle`; a `catch` guarantees recovery even from an unexpected throw |
+| **Reduced motion was ignored on indirect navigation.** Back/forward/breadcrumb/sidebar still played the flash                                            | The path-change effect ends the warp immediately when reduced motion is on                           |
+
+An earlier version of this document claimed a failed read "resets the view instead of stranding the
+camera mid-warp". That was **not true when written** — the branch could never execute. It is true now,
+and `filesystemStore.test.ts` covers it.
+
+### 2.2 Navigation invariants ✅ done
+
+Writing tests for the review fix above exposed that **back and forward had never worked**.
+`navigateTo` unconditionally set `historyIndex` to the end of the stack, so Back moved the folder
+but snapped the pointer forward again; the second press went nowhere, and the forward stack was
+truncated at the wrong position.
+
+Two invariants now hold, each with tests:
+
+1. **A failed navigation changes nothing.** Not the path, not the entries, not the history pointer.
+   This includes undoing the optimistic jump into a cached listing whose revalidation fails — the
+   case that started this thread.
+2. **`replaceHistory` means the caller owns the pointer.** Back, forward and refresh move within
+   the existing history; only genuinely new navigation extends it.
+
+**Layered animation.** Orbital position, entrance scale and hover scale are driven by three separate
+refs on nested groups. Sharing one object would make them fight for `scale` every frame.
 
 ---
 
