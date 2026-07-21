@@ -114,14 +114,25 @@ export class MockFileSystemService implements FileSystemService {
   async deleteEntries(paths: readonly string[]): Promise<readonly string[]> {
     await delay(LATENCY_MS)
 
-    for (const path of paths) {
+    /*
+     * All-or-nothing, matching the Rust backend: resolve every target before
+     * removing any. Mutating as we iterate would leave earlier entries deleted
+     * when a later one fails — a partial delete the interface forbids, and a
+     * divergence between the mock and production for exactly the failure case
+     * this contract exists to cover.
+     */
+    const doomed = paths.map((path) => {
       const parentPath = dirname(path)
       const parent = parentPath ? resolveNode(parentPath) : null
       const node = resolveNode(path)
       if (!parent?.children || !node) {
         throw new FsError('not-found', `No such entry: ${path}`, path)
       }
-      parent.children = parent.children.filter((child) => child !== node)
+      return { parent, node }
+    })
+
+    for (const { parent, node } of doomed) {
+      parent.children = parent.children!.filter((child) => child !== node)
     }
     return paths
   }

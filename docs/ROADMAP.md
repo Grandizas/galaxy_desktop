@@ -149,7 +149,7 @@ gates every mutation and has **7 tests of its own**:
 - **Validate-all-then-act.** One protected path anywhere in a multi-select aborts the entire batch,
   so a delete can never be half-applied.
 - **Names Windows would silently alter** (trailing dots/spaces, `CON`, `NUL`, `COM1`…) are refused
-  rather than creating a file that cannot afterwards be opened or deleted.
+  rather than creating a file that can never be opened or deleted again.
 
 A test caught a real hole here: `C:\` parses as `Prefix` + `RootDir`, so an obvious
 "fewer than two components means it's a root" check let the drive root through.

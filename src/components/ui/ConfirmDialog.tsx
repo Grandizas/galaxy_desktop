@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef } from 'react'
 
+import { useFocusTrap } from '@/hooks/useFocusTrap'
+
 import { Button } from './Button'
 
 interface ConfirmDialogProps {
@@ -27,6 +29,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useFocusTrap<HTMLDivElement>(open)
 
   useEffect(() => {
     if (!open) return
@@ -51,6 +54,7 @@ export function ConfirmDialog({
           onClick={onCancel}
         >
           <motion.div
+            ref={dialogRef}
             role="alertdialog"
             aria-modal
             aria-label={title}
