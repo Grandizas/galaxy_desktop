@@ -3,6 +3,7 @@
 //! The wire format mirrors `src/services/filesystem/tauri/TauriFileSystemService.ts`
 //! — keep the two in sync when adding fields.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -58,10 +59,30 @@ pub fn get_home_dir() -> Result<String, String> {
         .ok_or_else(|| "Could not determine the home directory".to_string())
 }
 
+/// Runs blocking work off the main thread.
+///
+/// Tauri executes a synchronous command **on the main thread**, so filesystem
+/// I/O there freezes the window: reading C:\Windows\System32 means one
+/// `metadata()` call per 5,000 entries. Every command that touches the disk is
+/// therefore async and delegates to `spawn_blocking`.
+async fn off_thread<T, F>(work: F) -> Result<T, String>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("Filesystem task failed: {e}"))
+}
+
+#[tauri::command]
+pub async fn list_directory(path: String) -> Result<Vec<Entry>, String> {
+    off_thread(move || read_directory(path)).await?
+}
+
 /// Reads one directory level. Unreadable children are skipped rather than
 /// failing the whole listing — system folders routinely deny access.
-#[tauri::command]
-pub fn list_directory(path: String) -> Result<Vec<Entry>, String> {
+fn read_directory(path: String) -> Result<Vec<Entry>, String> {
     let dir = PathBuf::from(&path);
     let read = fs::read_dir(&dir).map_err(|e| format!("{path}: {e}"))?;
 
@@ -81,7 +102,11 @@ pub fn list_directory(path: String) -> Result<Vec<Entry>, String> {
 }
 
 #[tauri::command]
-pub fn list_drives() -> Vec<Drive> {
+pub async fn list_drives() -> Vec<Drive> {
+    off_thread(read_drives).await.unwrap_or_default()
+}
+
+fn read_drives() -> Vec<Drive> {
     #[cfg(windows)]
     {
         windows_drives()
@@ -114,12 +139,7 @@ fn windows_drives() -> Vec<Drive> {
             let mut total: u64 = 0;
             let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
             let ok = unsafe {
-                GetDiskFreeSpaceExW(
-                    wide.as_ptr(),
-                    std::ptr::null_mut(),
-                    &mut total,
-                    &mut free,
-                )
+                GetDiskFreeSpaceExW(wide.as_ptr(), std::ptr::null_mut(), &mut total, &mut free)
             } != 0;
 
             let label = volume_label(&root)
@@ -132,6 +152,30 @@ fn windows_drives() -> Vec<Drive> {
                 total_bytes: ok.then_some(total),
                 free_bytes: ok.then_some(free),
             }
+        })
+        .collect()
+}
+
+/// Number of direct children per directory, for the satellites orbiting a
+/// folder-planet.
+///
+/// Deliberately a separate command: this is one `read_dir` per directory, so
+/// folding it into `list_directory` would make a large folder pay N+1 reads
+/// before anything could be drawn. The renderer paints first, then enriches.
+/// Unreadable directories are omitted rather than reported as zero.
+#[tauri::command]
+pub async fn count_children(paths: Vec<String>) -> HashMap<String, u32> {
+    off_thread(move || read_child_counts(paths))
+        .await
+        .unwrap_or_default()
+}
+
+fn read_child_counts(paths: Vec<String>) -> HashMap<String, u32> {
+    paths
+        .into_iter()
+        .filter_map(|path| {
+            let count = fs::read_dir(&path).ok()?.count() as u32;
+            Some((path, count))
         })
         .collect()
 }
@@ -200,7 +244,7 @@ mod tests {
 
     #[test]
     fn lists_at_least_one_drive_with_a_plausible_size() {
-        let drives = list_drives();
+        let drives = read_drives();
         assert!(!drives.is_empty(), "expected at least one drive");
 
         let system = drives
@@ -218,7 +262,7 @@ mod tests {
     #[test]
     fn lists_the_home_directory_with_folders_sorted_first() {
         let home = get_home_dir().unwrap();
-        let entries = list_directory(home.clone()).expect("home should be readable");
+        let entries = read_directory(home.clone()).expect("home should be readable");
 
         let first_file = entries.iter().position(|e| !e.is_directory);
         let last_dir = entries.iter().rposition(|e| e.is_directory);
@@ -235,8 +279,28 @@ mod tests {
     }
 
     #[test]
+    fn counts_children_and_skips_unreadable_paths() {
+        let home = get_home_dir().unwrap();
+        let bogus = r"C:\definitely-not-a-real-path-9f2a".to_string();
+
+        let counts = read_child_counts(vec![home.clone(), bogus.clone()]);
+
+        assert!(
+            counts.contains_key(&home),
+            "readable directory must be counted"
+        );
+        assert!(
+            !counts.contains_key(&bogus),
+            "unreadable paths are omitted, not zeroed"
+        );
+
+        let listed = read_directory(home.clone()).unwrap().len() as u32;
+        assert_eq!(counts[&home], listed, "count must match the listing");
+    }
+
+    #[test]
     fn missing_directory_returns_an_error_rather_than_panicking() {
-        let result = list_directory(r"C:\definitely-not-a-real-path-9f2a".to_string());
+        let result = read_directory(r"C:\definitely-not-a-real-path-9f2a".to_string());
         assert!(result.is_err());
     }
 }

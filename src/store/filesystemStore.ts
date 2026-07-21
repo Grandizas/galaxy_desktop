@@ -2,7 +2,34 @@ import { create } from 'zustand'
 
 import { getFileSystemService } from '@/services/filesystem'
 import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
-import { dirname, normalizePath } from '@/utils/path'
+import { FsError } from '@/types'
+import { byRecency, mergeChildCounts } from '@/utils/entries'
+import { basename, dirname, normalizePath } from '@/utils/path'
+
+/**
+ * How many directories to probe for child counts per navigation. A folder with
+ * thousands of subdirectories would otherwise issue thousands of reads for
+ * decoration alone.
+ */
+const CHILD_COUNT_LIMIT = 200
+
+/** OS errors are unreadable; the status bar shows people-facing copy. */
+function toMessage(error: unknown): string {
+  if (error instanceof FsError) {
+    const name = error.path ? basename(error.path) : 'that folder'
+    switch (error.code) {
+      case 'permission-denied':
+        return `Windows denied access to ${name}`
+      case 'not-found':
+        return `${name} no longer exists`
+      case 'unsupported':
+        return `${name} cannot be opened as a folder`
+      default:
+        return `Could not read ${name}`
+    }
+  }
+  return error instanceof Error ? error.message : String(error)
+}
 
 interface FilesystemState {
   /** Directory currently rendered as a solar system. */
@@ -27,6 +54,8 @@ interface FilesystemActions {
   goForward: () => Promise<void>
   goUp: () => Promise<void>
   refresh: () => Promise<void>
+  /** Backfills `childCount` for the directories in the current listing. */
+  enrichChildCounts: (path: string) => Promise<void>
 }
 
 export type FilesystemStore = FilesystemState & FilesystemActions
@@ -58,7 +87,13 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
     if (cached) set({ currentPath: path, entries: cached.entries })
 
     try {
-      const listing = await getFileSystemService().listDirectory(path)
+      const fetched = await getFileSystemService().listDirectory(path)
+
+      // Carry known child counts across, or satellites blink out on revisit.
+      const listing: DirectoryListing = {
+        ...fetched,
+        entries: cached ? mergeChildCounts(fetched.entries, cached.entries) : fetched.entries,
+      }
       cache.set(listing.path, listing)
 
       const nextHistory = options?.replaceHistory
@@ -72,8 +107,39 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
         history: nextHistory,
         historyIndex: nextHistory.length - 1,
       })
+
+      // Fire and forget: satellites pop in once the counts land.
+      void get().enrichChildCounts(listing.path)
     } catch (error) {
-      set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+      set({ status: 'error', error: toMessage(error) })
+    }
+  },
+
+  async enrichChildCounts(path) {
+    // Same ordering the renderer uses to pick its planets, so the directories
+    // we enrich are the ones actually on screen.
+    const directories = byRecency(
+      get().entries.filter((entry) => entry.isDirectory && entry.childCount === undefined),
+      CHILD_COUNT_LIMIT,
+    ).map((entry) => entry.path)
+
+    if (directories.length === 0) return
+
+    try {
+      const counts = await getFileSystemService().countChildren(directories)
+
+      // The user may have navigated away while this was in flight.
+      if (get().currentPath !== path) return
+
+      const entries = get().entries.map((entry) =>
+        counts[entry.path] === undefined ? entry : { ...entry, childCount: counts[entry.path] },
+      )
+      set({ entries })
+
+      const cached = get().cache.get(path)
+      if (cached) get().cache.set(path, { ...cached, entries })
+    } catch {
+      // Satellites are decorative — a failed count must never break navigation.
     }
   },
 

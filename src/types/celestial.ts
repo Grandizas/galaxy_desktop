@@ -21,6 +21,8 @@ export interface OrbitParams {
 export interface CelestialBody {
   readonly id: string
   readonly label: string
+  /** Secondary line for the hover card, e.g. "Image · 4.2 MB". */
+  readonly meta?: string
   readonly type: BodyType
   readonly kind: EntryKind
   readonly radius: number
@@ -36,4 +38,6 @@ export interface GalaxySystem {
   readonly path: string
   readonly label: string
   readonly bodies: readonly CelestialBody[]
+  /** Entries omitted because the directory exceeded the render budget. */
+  readonly hiddenCount: number
 }

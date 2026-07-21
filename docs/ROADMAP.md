@@ -36,33 +36,43 @@ Verified on Rust 1.97.1 / cargo 1.97.1.
 This is the "connect folders and files" phase. The seam already exists; this makes it load real
 data instead of fixtures.
 
-### 1.1 Flip the provider
+### 1.1 Flip the provider ✅ done
 
-Set `VITE_FS_PROVIDER=tauri` in `.env`. `getFileSystemService()` already picks the right
-implementation and falls back to mock when the Tauri bridge is missing — no component changes.
+`VITE_FS_PROVIDER=tauri` is now the default. `getFileSystemService()` still falls back to the mock
+when the Tauri bridge is absent, so `pnpm dev` in a browser keeps working unchanged.
 
 ### 1.2 Close the known wire-up gaps
 
-| Gap                                                                                                                                      | Fix                                                                                                         |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `childCount` is never populated by the Tauri provider, so real folders render **no satellites** — the mock sets it, the backend does not | Return a cheap child count from `list_directory` (count entries, don't recurse), or load it lazily on hover |
-| ~~The sidebar derives the home path from `history[0]`~~                                                                                  | ✅ Done — `homePath` is now explicit state, set during `initialize()`                                       |
-| ~~Drive roots normalise to `C:` while every other path keeps a trailing separator~~                                                      | ✅ Done — `normalizePath` canonicalises drive roots; `dirname`/`join`/`basename` updated, 14 unit tests     |
-| System folders throw on read; the store shows a raw OS error in the status bar                                                           | Map `FsErrorCode` to human copy, render an in-scene empty/denied state                                      |
-| Nothing renders the hovered body — `selectionStore.hovered` is set but no tooltip exists                                                 | Add a `<BodyTooltip>` using drei `<Html>`, matching the design's hover card                                 |
-| Files show no label in the scene (only planets do)                                                                                       | Render moon labels on hover / when zoomed in past a threshold                                               |
+| Gap                                                                                                 | Fix                                                                                                                |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| ~~`childCount` is never populated by the Tauri provider, so real folders render **no satellites**~~ | ✅ Done — new `count_children` command, called _after_ the listing renders so a slow count never delays the galaxy |
+| ~~The sidebar derives the home path from `history[0]`~~                                             | ✅ Done — `homePath` is now explicit state, set during `initialize()`                                              |
+| ~~Drive roots normalise to `C:` while every other path keeps a trailing separator~~                 | ✅ Done — `normalizePath` canonicalises drive roots; `dirname`/`join`/`basename` updated, 14 unit tests            |
+| ~~System folders throw on read; the store shows a raw OS error~~                                    | ✅ Done — `toMessage()` maps each `FsErrorCode` to human copy ("Windows denied access to System32")                |
+| ~~Nothing renders the hovered body~~                                                                | ✅ Done — `<BodyLabel>` renders the hover card; hover state now lives in the store, shared by both bodies          |
+| ~~Files show no label in the scene~~                                                                | ✅ Done — moons label on hover or selection, planets always                                                        |
+| Still open: an in-scene empty/denied state (the error currently only appears in the status bar)     | Render a "this region is sealed" message at the system centre                                                      |
 
-### 1.3 Guard against real directories
+### 1.3 Guard against real directories ✅ done
 
-Fixtures have 9 entries; `C:\Windows\System32` has ~5000. Today that is one draw call per body.
+- Render budget of **120 planets / 180 moons** (`GALAXY.maxPlanets`, `GALAXY.maxMoons`)
+- Overflow is surfaced in the status bar as "N not shown" in warning colour — never silent
+- Kept entries are the **most recently modified**, so the interesting ones survive the cut
+- The real fix (instanced rendering) still lands in Phase 4; raise the budget then
 
-- Cap the visible bodies (e.g. 300) and surface "+4,700 more" in the status bar — **log what was
-  dropped**, never truncate silently
-- Sort by relevance (folders first, then recently modified)
-- Real fix lands in Phase 4
+**Remaining before Phase 1 is closed:** confirm on a genuinely huge directory
+(`C:\Windows\System32`) that the frame rate holds.
 
-**Done when:** you can browse your actual drive, folders open, sizes and dates are correct, and
-`C:\Windows` does not freeze the app.
+### 1.4 Fixes from the first review pass ✅ done
+
+| Issue                                                                                                                 | Fix                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Disk I/O ran on the main thread.** Tauri executes sync commands there, so reading System32 froze the window         | Every disk-touching command is now `async` and delegates to `spawn_blocking` via `off_thread()`        |
+| **Similar names collapsed onto one bearing.** A polynomial hash gave `ms-MY`/`ms-MT`/`nl-NL` the same angle           | murmur3 avalanche in `hashString`, plus golden-angle placement so alignment is structurally impossible |
+| **Large systems stretched past the camera.** Linear orbit spacing put planet 120 at radius 663 with `maxDistance` 160 | √-based spacing keeps the outermost orbit under 110                                                    |
+| **Satellites blinked on revisit.** A cached listing's `childCount` was overwritten by the fresh fetch                 | `mergeChildCounts()` carries known counts across                                                       |
+| **Enriched folders ≠ rendered folders.** The store sliced alphabetically while the renderer picked by recency         | Both now share `byRecency()` from `utils/entries`                                                      |
+| `lsof` failures silently swallowed in `kill-port`                                                                     | Distinguishes "no match" from a missing binary or real failure                                         |
 
 ---
 

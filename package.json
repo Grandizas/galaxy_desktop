@@ -22,7 +22,8 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "kill-port": "node scripts/kill-port.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

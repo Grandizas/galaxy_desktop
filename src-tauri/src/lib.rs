@@ -10,6 +10,7 @@ pub fn run() {
             filesystem::get_home_dir,
             filesystem::list_directory,
             filesystem::list_drives,
+            filesystem::count_children,
             filesystem::reveal_in_explorer,
         ])
         .run(tauri::generate_context!())

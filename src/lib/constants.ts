@@ -10,6 +10,13 @@ export const GALAXY = {
   /** Radians per second at the innermost orbit. */
   baseOrbitSpeed: 0.08,
   maxInclination: 0.18,
+  /**
+   * Render budget per system. One mesh per body today, so a directory like
+   * C:\Windows\System32 (~5000 entries) would stall the frame. Raised once
+   * instanced rendering lands.
+   */
+  maxPlanets: 120,
+  maxMoons: 180,
 } as const
 
 export const CAMERA = {

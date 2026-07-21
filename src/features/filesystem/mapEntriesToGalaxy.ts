@@ -1,4 +1,7 @@
+import { ENTRY_KIND_LABEL } from '@/lib/classify'
 import { GALAXY } from '@/lib/constants'
+import { byRecency } from '@/utils/entries'
+import { formatBytes, formatCount } from '@/utils/format'
 import { planetPalette } from '@/styles/theme'
 import type { CelestialBody, EntryKind, FsEntry, GalaxySystem } from '@/types'
 import { hashPick, hashUnit } from '@/utils/hash'
@@ -17,6 +20,18 @@ const KIND_COLOR: Record<EntryKind, string> = {
 
 const lerp = (min: number, max: number, t: number) => min + (max - min) * t
 
+/** ~137.5°, the angle that never repeats — sunflower-seed packing. */
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
+
+/**
+ * Orbit radius grows with the square root of the index, so a system stays
+ * legible whether it holds three folders or a hundred. Linear growth pushed the
+ * outermost planet of a large directory ~660 units out — far past the camera's
+ * useful range, and the reason big folders trailed off into the distance.
+ */
+const orbitRadiusFor = (index: number) =>
+  GALAXY.firstOrbitRadius + GALAXY.orbitSpacing * Math.sqrt(index) * 1.6
+
 /**
  * Projects a directory listing into the 3D scene graph.
  *
@@ -27,18 +42,33 @@ export function mapEntriesToGalaxy(
   path: string,
   label: string,
   entries: readonly FsEntry[],
+  limits: { maxPlanets?: number; maxMoons?: number } = {},
 ): GalaxySystem {
-  const folders = entries.filter((entry) => entry.isDirectory)
-  const files = entries.filter((entry) => !entry.isDirectory)
+  const maxPlanets = limits.maxPlanets ?? GALAXY.maxPlanets
+  const maxMoons = limits.maxMoons ?? GALAXY.maxMoons
+
+  const allFolders = entries.filter((entry) => entry.isDirectory)
+  const allFiles = entries.filter((entry) => !entry.isDirectory)
+
+  // A real system folder holds thousands of entries. Show the most relevant
+  // ones — most recently touched first — and report the remainder rather than
+  // silently pretending the directory is smaller than it is.
+  const folders = allFolders.length > maxPlanets ? byRecency(allFolders, maxPlanets) : allFolders
+  const files = allFiles.length > maxMoons ? byRecency(allFiles, maxMoons) : allFiles
+  const hiddenCount = allFolders.length - folders.length + (allFiles.length - files.length)
 
   const planets = folders.map((folder, index) => {
     const seed = hashUnit(folder.path)
     const radius = lerp(...GALAXY.planetRadiusRange, seed)
-    const orbitRadius = GALAXY.firstOrbitRadius + index * GALAXY.orbitSpacing
+    const orbitRadius = orbitRadiusFor(index)
 
     return {
       id: folder.path,
       label: folder.name,
+      meta:
+        folder.childCount === undefined
+          ? 'Folder'
+          : `Folder · ${formatCount(folder.childCount, 'item')}`,
       type: 'planet',
       kind: folder.kind,
       radius,
@@ -46,7 +76,9 @@ export function mapEntriesToGalaxy(
       emissive: 0.28,
       orbit: {
         radius: orbitRadius,
-        phase: seed * Math.PI * 2,
+        // Golden angle by index, jittered by the hash. Structural spacing means
+        // planets can never line up, whatever the names happen to hash to.
+        phase: (index * GOLDEN_ANGLE + seed * 0.6) % (Math.PI * 2),
         speed: (GALAXY.baseOrbitSpeed * GALAXY.firstOrbitRadius) / orbitRadius,
         inclination: (seed - 0.5) * 2 * GALAXY.maxInclination,
       },
@@ -62,6 +94,7 @@ export function mapEntriesToGalaxy(
     return {
       id: file.path,
       label: file.name,
+      meta: `${ENTRY_KIND_LABEL[file.kind]} · ${formatBytes(file.size)}`,
       type: 'moon',
       kind: file.kind,
       radius: lerp(...GALAXY.moonRadiusRange, seed),
@@ -76,7 +109,7 @@ export function mapEntriesToGalaxy(
     } satisfies CelestialBody
   })
 
-  return { path, label, bodies: [...planets, ...moons] }
+  return { path, label, bodies: [...planets, ...moons], hiddenCount }
 }
 
 /** Placeholder satellites hinting at a folder's contents before it is read. */
