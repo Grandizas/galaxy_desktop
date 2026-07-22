@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 
 import { getFileSystemService } from '@/services/filesystem'
+import { useSearchStore } from '@/store/searchStore'
+import { useSelectionStore } from '@/store/selectionStore'
 import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
 import { FsError } from '@/types'
 import { byRecency, mergeChildCounts } from '@/utils/entries'
@@ -100,6 +102,13 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
     // `force` exists for refresh: re-entering the directory you are already in
     // must still re-read it, or a newly created folder never appears.
     if (!options?.force && path === currentPath && get().status === 'ready') return true
+
+    // A new directory invalidates the previous folder's selection and any active
+    // search. Done here — not in a React effect — so it happens *before* this
+    // promise resolves; a caller that selects afterwards (e.g. opening a search
+    // result) then wins deterministically instead of racing an effect.
+    useSelectionStore.getState().clear()
+    useSearchStore.getState().reset()
 
     // Kept so the optimistic jump below can be undone if the read fails.
     const previous = { currentPath, entries }

@@ -1,4 +1,4 @@
-import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
+import type { DirectoryListing, DriveInfo, FsEntry, SearchResult } from '@/types'
 
 /**
  * The single contract the UI knows about. Swapping the mock provider for the
@@ -29,6 +29,12 @@ export interface FileSystemService {
    * Rejects the whole batch if any path is protected.
    */
   deleteEntries(paths: readonly string[]): Promise<readonly string[]>
+
+  /**
+   * Case-insensitive recursive search of a subtree by name. Bounded by the
+   * backend; check `truncated` to know whether results were capped.
+   */
+  searchDirectory(root: string, query: string): Promise<SearchResult>
 
   /** Opens an entry with the OS default handler. */
   openEntry(path: string): Promise<void>

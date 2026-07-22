@@ -1,29 +1,48 @@
 import { SearchBar } from '@/components/ui/SearchBar'
-import { useSelectionStore } from '@/store/selectionStore'
+import { useFilesystemStore } from '@/store/filesystemStore'
 import { useSearchStore } from '@/store/searchStore'
 
-import { useSearchMatches } from './useSearchMatches'
+import { useOpenResult } from './useOpenResult'
 
-/** Search input wired to the search store; results highlight in the galaxy. */
+/**
+ * Recursive search rooted at the current directory. Navigating away clears the
+ * search (owned by `navigateTo`), so this is a "find here, then go" tool rather
+ * than a query that follows you around.
+ */
 export function SearchField() {
+  const currentPath = useFilesystemStore((state) => state.currentPath)
   const query = useSearchStore((state) => state.query)
-  const setQuery = useSearchStore((state) => state.setQuery)
+  const status = useSearchStore((state) => state.status)
+  const results = useSearchStore((state) => state.results)
+  const truncated = useSearchStore((state) => state.truncated)
+  const runSearch = useSearchStore((state) => state.runSearch)
   const cycleMatch = useSearchStore((state) => state.cycleMatch)
-  const activeMatchIndex = useSearchStore((state) => state.activeMatchIndex)
-  const select = useSelectionStore((state) => state.select)
 
-  const matches = useSearchMatches()
+  const openResult = useOpenResult()
+
+  const hint = () => {
+    if (!query.trim()) return null
+    if (status === 'searching') return 'searching…'
+    if (status === 'error') return 'error'
+    return `${results.length}${truncated ? '+' : ''} found`
+  }
 
   return (
     <SearchBar
       value={query}
-      onValueChange={setQuery}
-      hint={query.trim() ? `${matches.length} found` : null}
+      onValueChange={(value) => runSearch(currentPath ?? '', value)}
+      hint={hint()}
       onKeyDown={(event) => {
-        if (event.key !== 'Enter' || matches.length === 0) return
-        const path = matches[activeMatchIndex % matches.length]
-        if (path) select(path)
-        cycleMatch(1)
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          cycleMatch(1)
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault()
+          cycleMatch(-1)
+        } else if (event.key === 'Enter') {
+          const target = useSearchStore.getState().activeResult()
+          if (target) void openResult(target)
+        }
       }}
     />
   )

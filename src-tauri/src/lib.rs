@@ -12,6 +12,7 @@ pub fn run() {
             filesystem::list_directory,
             filesystem::list_drives,
             filesystem::count_children,
+            filesystem::search_directory,
             filesystem::create_directory,
             filesystem::rename_entry,
             filesystem::delete_entries,

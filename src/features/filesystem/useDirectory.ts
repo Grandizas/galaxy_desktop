@@ -1,28 +1,22 @@
 import { useEffect } from 'react'
 
 import { useFilesystemStore } from '@/store/filesystemStore'
-import { useSelectionStore } from '@/store/selectionStore'
-import { useSearchStore } from '@/store/searchStore'
 
 /**
- * Boots the filesystem store once and keeps transient UI state (selection,
- * search) in sync with the directory currently on screen.
+ * Boots the filesystem store once.
+ *
+ * Clearing selection and search on navigation is owned by `navigateTo` itself,
+ * so a result opened from search can select its target deterministically —
+ * doing it here in an effect would race that select.
  */
 export function useDirectory() {
   const status = useFilesystemStore((state) => state.status)
   const currentPath = useFilesystemStore((state) => state.currentPath)
   const initialize = useFilesystemStore((state) => state.initialize)
-  const clearSelection = useSelectionStore((state) => state.clear)
-  const resetSearch = useSearchStore((state) => state.reset)
 
   useEffect(() => {
     if (status === 'idle') void initialize()
   }, [status, initialize])
-
-  useEffect(() => {
-    clearSelection()
-    resetSearch()
-  }, [currentPath, clearSelection, resetSearch])
 
   return { status, currentPath }
 }

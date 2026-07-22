@@ -284,14 +284,34 @@ making files cost a draw call each fails two.
 
 ---
 
-## Phase 5 — Search
+## Phase 5 — Search ✅ recursive search (watcher deferred)
 
-Current search filters the open directory only.
+Search is now **recursive across the subtree**, not just the open directory.
 
-1. Rust command that walks a subtree on a worker thread and streams results via events
-2. In-memory index keyed by path, invalidated by a filesystem watcher (`notify` crate)
-3. Results as a constellation overlay: matches glow, non-matches dim (the dimming already works)
-4. `Enter` flies to the next match — `cycleMatch` exists, it just needs the camera call
+| Piece                           | Result                                                                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_directory` Rust command | Iterative walk off the main thread, bounded by 500 results / 60k nodes / depth 24 so a search rooted high in the tree cannot hang. Skips unreadable folders. 4 tests |
+| Mock provider parity            | Walks the fixture tree the same way, so `pnpm dev` searches too. 4 tests                                                                                             |
+| `searchStore`                   | Debounced (220 ms), and a monotonic request id means a slow search can never overwrite a newer one's results. `reset` invalidates anything in flight. 6 tests        |
+| Results panel                   | A list beneath the search bar: name, parent path, kind. Click or Enter opens it                                                                                      |
+| Fly-to                          | `useOpenResult` navigates to the result's folder (into it for a directory, to the parent for a file) and selects it, reusing the warp transition                     |
+| Keyboard                        | ↑/↓ cycle results, Enter opens the active one                                                                                                                        |
+
+**Design choices**
+
+- **A "find here, then go" tool.** The search is rooted at the current directory and clears when you
+  navigate — it does not follow you around. Simpler, and it matches the "Search this system" framing.
+- **A results list, not an in-scene constellation.** A match can live far below the open system,
+  where a glow could not reach it. The current directory's own matches still dim via the existing
+  query-driven `isDimmed`.
+- **The clear-on-navigate race.** Selection and search reset now live inside `navigateTo`, not a
+  React effect. Opening a file result navigates and _then_ selects the file; had the reset stayed in
+  an effect it would have run as a scheduled task after the `await`-continuation's `select`,
+  wiping it. Doing it in the store makes the ordering deterministic.
+
+**Deferred: the filesystem watcher + persistent index** (`notify` crate). A fresh bounded walk per
+search is fast enough and avoids a whole class of cache-invalidation bugs. The watcher is a
+repeat-search optimisation, worth adding only if searches start feeling slow.
 
 ---
 

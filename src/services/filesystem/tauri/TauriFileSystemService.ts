@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { openPath } from '@tauri-apps/plugin-opener'
 
 import { classifyEntry } from '@/lib/classify'
-import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
+import type { DirectoryListing, DriveInfo, FsEntry, SearchResult } from '@/types'
 import { FsError } from '@/types'
 import { normalizePath } from '@/utils/path'
 
@@ -103,6 +103,19 @@ export class TauriFileSystemService implements FileSystemService {
       return await invoke<string[]>('delete_entries', { paths })
     } catch (error) {
       throw toFsError(error, paths[0])
+    }
+  }
+
+  async searchDirectory(root: string, query: string): Promise<SearchResult> {
+    if (!query.trim()) return { entries: [], truncated: false, examined: 0 }
+    try {
+      const raw = await invoke<{ entries: RawEntry[]; truncated: boolean; examined: number }>(
+        'search_directory',
+        { root, query },
+      )
+      return { entries: raw.entries.map(toEntry), truncated: raw.truncated, examined: raw.examined }
+    } catch (error) {
+      throw toFsError(error, root)
     }
   }
 
