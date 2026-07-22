@@ -133,8 +133,9 @@ refs on nested groups. Sharing one object would make them fight for `scale` ever
 | ✅ Ctrl-click multi-select                                | Right-clicking inside a selection keeps it; outside it targets one body         |
 | ✅ New folder button → immediate inline rename            | Picks a free "New World N" name                                                 |
 | ✅ `F2` rename, `Delete` key                              | Wired through the same actions as the menu                                      |
-| ⬜ Shift-range select and marquee                         | `selectionStore` models the anchor; no UI yet                                   |
-| ⬜ Drag & drop                                            | Deferred — see below                                                            |
+| ✅ Drag a body onto a folder-planet to move it            | See below                                                                       |
+| ⬜ Shift-range select and marquee                         | Skipped by choice — a "range" in a scattered 3D field has no natural order      |
+| ⬜ Import via OS drop                                     | Not built — dragging files in from Windows Explorer                             |
 | ⬜ "Form dust" birth animation                            | New folders currently just materialise with the rest                            |
 
 ### The safety layer
@@ -154,12 +155,25 @@ gates every mutation and has **7 tests of its own**:
 A test caught a real hole here: `C:\` parses as `Prefix` + `RootDir`, so an obvious
 "fewer than two components means it's a root" check let the drive root through.
 
-### Deferred: drag & drop
+### Drag to move ✅ done
 
-Moving a body onto a planet needs a 3D drag with a valid-target hit test, plus a `move_entries`
-command with its own guard rails (no moving a directory into itself). That is a phase-sized piece
-of work, not a finishing touch, and the value is lower than Phase 4's rendering work — a folder
-with 4,700 hidden entries is a bigger problem than the absence of drag-to-move.
+Drag a moon or planet onto a folder-planet to move it there.
+
+| Layer                       | Detail                                                                                                                                                                                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `move_entries` Rust command | Validated all-or-nothing, off the main thread. `resolve_move_target` rejects moving into itself, into a descendant, a no-op back to the current parent, and a name collision. 5 tests                                                                     |
+| `canDrop` predicate         | Pure mirror of the backend guards so an illegal target never highlights — the authoritative check still runs in Rust. Case-insensitive; a shared-prefix sibling (`Proj` vs `Projects`) is _not_ treated as a descendant. 6 tests                          |
+| Mock parity                 | The in-memory provider enforces the same guards, so `pnpm dev` behaves like production. 3 tests                                                                                                                                                           |
+| `useBodyDrag`               | Press-and-move past a 6px threshold starts a drag (a shorter press is still a click). Orbiting is suspended **imperatively** on press so the first pointer-move cannot leak into a camera rotation. The click R3F fires at the end of a drag is swallowed |
+| Feedback                    | The valid drop target swells and shows a green halo; a toast confirms the move                                                                                                                                                                            |
+
+**The descendant guard is the one that matters.** Moving `Projects` into `Projects\galaxy-app`
+would orphan the moved subtree — it is checked with a case-insensitive path-prefix test (Windows is
+case-insensitive) guarded by a trailing separator so `C:\ab` is not seen as a child of `C:\a`.
+
+**Not built:** importing OS files by dropping them from Windows Explorer (`dragDropEnabled` is on,
+but it needs a copy command and is a separate concern), and shift-range / marquee selection — a
+linear "range" has no natural meaning in a scattered 3D field, so Ctrl-click multi-select stands.
 
 ---
 

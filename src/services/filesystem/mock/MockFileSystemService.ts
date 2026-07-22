@@ -137,6 +137,49 @@ export class MockFileSystemService implements FileSystemService {
     return paths
   }
 
+  async moveEntries(paths: readonly string[], targetDir: string): Promise<readonly string[]> {
+    await delay(LATENCY_MS)
+
+    const target = resolveNode(targetDir)
+    if (!target?.isDirectory)
+      throw new FsError('not-found', `No such directory: ${targetDir}`, targetDir)
+
+    // Validate the whole batch before moving any, matching the backend.
+    const planned = paths.map((path) => {
+      const parentPath = dirname(path)
+      const parent = parentPath ? resolveNode(parentPath) : null
+      const node = resolveNode(path)
+      if (!parent?.children || !node) {
+        throw new FsError('not-found', `No such entry: ${path}`, path)
+      }
+      const normalized = normalizePath(path).toLowerCase()
+      const targetNorm = normalizePath(targetDir).toLowerCase()
+      if (targetNorm === normalized || targetNorm.startsWith(`${normalized}\\`)) {
+        throw new FsError('unsupported', 'Cannot move a folder into itself', path)
+      }
+      if (target.children?.some((child) => child.name === node.name)) {
+        throw new FsError('unsupported', `"${node.name}" already exists here`, path)
+      }
+      return { parent, node }
+    })
+
+    // Reject intra-batch conflicts before mutating, matching the backend: two
+    // sources that would land on the same name collide once moving begins.
+    const destNames = planned.map(({ node }) => node.name.toLowerCase())
+    if (new Set(destNames).size !== destNames.length) {
+      throw new FsError('unsupported', 'Two of the items would land on the same name', targetDir)
+    }
+
+    target.children ??= []
+    const moved: string[] = []
+    for (const { parent, node } of planned) {
+      parent.children = parent.children!.filter((child) => child !== node)
+      target.children.push(node)
+      moved.push(join(normalizePath(targetDir), node.name))
+    }
+    return moved
+  }
+
   async searchDirectory(root: string, query: string): Promise<SearchResult> {
     await delay(LATENCY_MS)
 

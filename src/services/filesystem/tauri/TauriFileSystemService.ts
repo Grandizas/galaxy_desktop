@@ -106,6 +106,15 @@ export class TauriFileSystemService implements FileSystemService {
     }
   }
 
+  async moveEntries(paths: readonly string[], targetDir: string): Promise<readonly string[]> {
+    if (paths.length === 0) return []
+    try {
+      return await invoke<string[]>('move_entries', { paths, targetDir })
+    } catch (error) {
+      throw toFsError(error, targetDir)
+    }
+  }
+
   async searchDirectory(root: string, query: string): Promise<SearchResult> {
     if (!query.trim()) return { entries: [], truncated: false, examined: 0 }
     try {

@@ -16,6 +16,7 @@ pub fn run() {
             filesystem::create_directory,
             filesystem::rename_entry,
             filesystem::delete_entries,
+            filesystem::move_entries,
             filesystem::reveal_in_explorer,
         ])
         .run(tauri::generate_context!())

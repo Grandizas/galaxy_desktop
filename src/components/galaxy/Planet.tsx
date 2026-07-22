@@ -4,6 +4,7 @@ import { Vector3, type Group, type Mesh } from 'three'
 
 import { useMaterialize } from '@/hooks/useMaterialize'
 import { useOrbitalMotion } from '@/hooks/useOrbitalMotion'
+import { palette } from '@/styles/theme'
 import type { CelestialBody } from '@/types'
 
 import { BodyLabel } from './BodyLabel'
@@ -17,6 +18,8 @@ export interface CelestialProps {
   selected?: boolean
   hovered?: boolean
   dimmed?: boolean
+  /** Valid drop target for the body currently being dragged. */
+  dropTarget?: boolean
   /** Position in the system, used to stagger the entrance animation. */
   index?: number
   /** Dense systems label on hover only — see GALAXY.labelLimit. */
@@ -27,6 +30,8 @@ export interface CelestialProps {
   onOpen?: (body: CelestialBody, worldPosition: Vector3) => void
   onHover?: (body: CelestialBody | null) => void
   onContextMenu?: (body: CelestialBody, screen: { x: number; y: number }) => void
+  /** Screen coordinates of a press, for the drag-to-move gesture. */
+  onBodyPointerDown?: (body: CelestialBody, clientX: number, clientY: number) => void
 }
 
 /** A folder, rendered as an orbiting planet with its own satellites. */
@@ -35,12 +40,14 @@ export function Planet({
   selected = false,
   hovered = false,
   dimmed = false,
+  dropTarget = false,
   index = 0,
   showLabel = true,
   onSelect,
   onOpen,
   onHover,
   onContextMenu,
+  onBodyPointerDown,
 }: CelestialProps) {
   const groupRef = useOrbitalMotion(body.orbit)
   const materializeRef = useMaterialize<Group>(index)
@@ -49,8 +56,8 @@ export function Planet({
   useFrame((_, delta) => {
     if (!meshRef.current) return
     meshRef.current.rotation.y += delta * 0.15
-    // Ease towards the hover scale rather than snapping.
-    const target = hovered || selected ? 1.18 : 1
+    // A drop target swells more than a hover, to read as "release here".
+    const target = dropTarget ? 1.32 : hovered || selected ? 1.18 : 1
     meshRef.current.scale.lerp(scratchScale.setScalar(target), Math.min(delta * 8, 1))
   })
 
@@ -68,6 +75,13 @@ export function Planet({
         <group ref={materializeRef}>
           <mesh
             ref={meshRef}
+            onPointerDown={(event) => {
+              // Left button only — right/middle must reach the context menu,
+              // not begin a move.
+              if (event.button !== 0) return
+              event.stopPropagation()
+              onBodyPointerDown?.(body, event.clientX, event.clientY)
+            }}
             onClick={(event) => {
               event.stopPropagation()
               onSelect?.(body, event.ctrlKey || event.metaKey)
@@ -102,6 +116,7 @@ export function Planet({
           </mesh>
 
           {selected && <SelectionHalo radius={body.radius * 1.8} />}
+          {dropTarget && <SelectionHalo radius={body.radius * 2} color={palette.success} />}
 
           {/* Satellites are drawn by <MoonField> in the shared instanced mesh. */}
 

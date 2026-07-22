@@ -75,6 +75,7 @@ interface FilesystemActions {
   createFolder: (name: string) => Promise<FsEntry | null>
   renameEntry: (path: string, newName: string) => Promise<FsEntry | null>
   deleteEntries: (paths: readonly string[]) => Promise<boolean>
+  moveEntries: (paths: readonly string[], targetDir: string) => Promise<boolean>
 }
 
 export type FilesystemStore = FilesystemState & FilesystemActions
@@ -248,6 +249,20 @@ export const useFilesystemStore = create<FilesystemStore>((set, get) => ({
 
     try {
       await getFileSystemService().deleteEntries(paths)
+      await get().refresh()
+      return true
+    } catch (error) {
+      set({ error: toMessage(error) })
+      return false
+    }
+  },
+
+  async moveEntries(paths, targetDir) {
+    if (paths.length === 0) return false
+    try {
+      await getFileSystemService().moveEntries(paths, targetDir)
+      // The moved entries leave the current listing; the target's child count
+      // changes. A refresh reflects both.
       await get().refresh()
       return true
     } catch (error) {

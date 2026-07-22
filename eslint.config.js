@@ -34,8 +34,14 @@ export default tseslint.config(
   },
   {
     // The render loop is imperative by design: `useFrame` callbacks mutate
-    // Three.js objects after render, which the React Compiler rules flag.
-    files: ['src/components/galaxy/**/*.tsx', 'src/hooks/useOrbitalMotion.ts'],
+    // Three.js objects after render, and the drag gesture toggles OrbitControls
+    // imperatively to beat a pointer-move race — both flagged by the compiler.
+    files: [
+      'src/components/galaxy/**/*.tsx',
+      'src/hooks/useOrbitalMotion.ts',
+      'src/hooks/useMaterialize.ts',
+      'src/features/filesystem/useBodyDrag.ts',
+    ],
     rules: {
       'react-hooks/purity': 'off',
       'react-hooks/immutability': 'off',

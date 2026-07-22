@@ -35,6 +35,7 @@ function stub(overrides: Partial<FileSystemService> = {}): FileSystemService {
       throw new Error('not stubbed')
     },
     deleteEntries: async (paths) => paths,
+    moveEntries: async (paths) => paths,
     searchDirectory: async () => ({ entries: [], truncated: false, examined: 0 }),
     openEntry: async () => {},
     revealEntry: async () => {},
