@@ -10,7 +10,7 @@ use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct Entry {
     pub path: String,
     pub name: String,
@@ -154,6 +154,104 @@ fn windows_drives() -> Vec<Drive> {
             }
         })
         .collect()
+}
+
+#[derive(Serialize, Debug)]
+pub struct SearchResult {
+    pub entries: Vec<Entry>,
+    /// True when a limit stopped the walk before the whole tree was seen.
+    pub truncated: bool,
+    /// Directories actually descended into — useful for a "searched N folders" hint.
+    pub examined: u32,
+}
+
+/// Upper bounds so a search rooted high in the tree cannot hang the app.
+const MAX_RESULTS: usize = 500;
+const MAX_NODES: u32 = 60_000;
+const MAX_DEPTH: u32 = 24;
+
+#[tauri::command]
+pub async fn search_directory(root: String, query: String) -> Result<SearchResult, String> {
+    off_thread(move || search_tree(&root, &query)).await?
+}
+
+/// Case-insensitive substring search over a subtree.
+///
+/// Iterative rather than recursive so the node/result caps apply globally, not
+/// per branch: a directory with a million files must not be able to blow the
+/// budget by living inside a shallow tree. Unreadable directories are skipped,
+/// matching `read_directory` — a denied folder narrows the search, it does not
+/// fail it.
+fn search_tree(root: &str, query: &str) -> Result<SearchResult, String> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return Ok(SearchResult {
+            entries: Vec::new(),
+            truncated: false,
+            examined: 0,
+        });
+    }
+
+    let root_path = PathBuf::from(root);
+    // Probe the root eagerly so a missing (os error 2) or denied (os error 5)
+    // root is reported with its OS error — which the renderer classifies into
+    // not-found / permission-denied — instead of `is_dir()` collapsing both to
+    // `false` and a generic message, or the loop silently returning no results.
+    // Descendant read failures are still skipped: a denied subfolder narrows the
+    // search, it does not fail it. Message format matches `read_directory`.
+    fs::read_dir(&root_path).map_err(|e| format!("{root}: {e}"))?;
+
+    let mut entries = Vec::new();
+    let mut queue: Vec<(PathBuf, u32)> = vec![(root_path, 0)];
+    let mut nodes = 0u32;
+    let mut examined = 0u32;
+    let mut truncated = false;
+
+    while let Some((dir, depth)) = queue.pop() {
+        let read = match fs::read_dir(&dir) {
+            Ok(read) => read,
+            Err(_) => continue, // permission denied, or vanished mid-walk
+        };
+        examined += 1;
+
+        for item in read.filter_map(Result::ok) {
+            nodes += 1;
+            if nodes > MAX_NODES || entries.len() >= MAX_RESULTS {
+                truncated = true;
+                break;
+            }
+
+            let path = item.path();
+            let name = item.file_name().to_string_lossy().to_lowercase();
+            if name.contains(&needle) {
+                if let Some(entry) = to_entry(&path) {
+                    entries.push(entry);
+                }
+            }
+
+            // Descend after matching, so a matching directory still appears.
+            if depth < MAX_DEPTH && item.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                queue.push((path, depth + 1));
+            }
+        }
+
+        if truncated {
+            break;
+        }
+    }
+
+    // Directories first, then case-insensitive by name — same order as a listing.
+    entries.sort_by(|a, b| {
+        b.is_directory
+            .cmp(&a.is_directory)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(SearchResult {
+        entries,
+        truncated,
+        examined,
+    })
 }
 
 /// Number of direct children per directory, for the satellites orbiting a
@@ -439,5 +537,63 @@ mod tests {
             PathBuf::from(&doomed.path).is_dir(),
             "nothing may be deleted when validation fails"
         );
+    }
+
+    #[test]
+    fn search_finds_matches_recursively() {
+        let scratch = Scratch::new("search");
+        let nested = make_directory(scratch.path(), "nested").unwrap();
+        fs::write(PathBuf::from(&nested.path).join("report-final.txt"), b"x").unwrap();
+        fs::write(PathBuf::from(scratch.path()).join("report-draft.txt"), b"x").unwrap();
+        fs::write(PathBuf::from(scratch.path()).join("unrelated.md"), b"x").unwrap();
+
+        let result = search_tree(scratch.path(), "report").unwrap();
+        let names: Vec<&str> = result.entries.iter().map(|e| e.name.as_str()).collect();
+
+        assert!(names.contains(&"report-draft.txt"), "top-level match");
+        assert!(names.contains(&"report-final.txt"), "nested match");
+        assert!(!names.contains(&"unrelated.md"), "non-match excluded");
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn search_is_case_insensitive_and_matches_directories() {
+        let scratch = Scratch::new("search-case");
+        make_directory(scratch.path(), "MyReports").unwrap();
+
+        let result = search_tree(scratch.path(), "myreports").unwrap();
+        assert_eq!(result.entries.len(), 1);
+        assert!(result.entries[0].is_directory);
+    }
+
+    #[test]
+    fn empty_query_returns_nothing_rather_than_everything() {
+        let scratch = Scratch::new("search-empty");
+        fs::write(PathBuf::from(scratch.path()).join("a.txt"), b"x").unwrap();
+
+        for query in ["", "   "] {
+            let result = search_tree(scratch.path(), query).unwrap();
+            assert!(result.entries.is_empty(), "query {query:?} must match nothing");
+        }
+    }
+
+    #[test]
+    fn search_on_a_missing_root_surfaces_the_os_error() {
+        // The renderer classifies "os error 2" as not-found; a generic message
+        // would strand it as `unknown`. Same contract as read_directory.
+        let err = search_tree(r"C:\definitely-not-a-real-path-9f2a", "x").unwrap_err();
+        assert!(err.contains("os error"), "expected an OS error, got: {err}");
+    }
+
+    #[test]
+    fn search_stops_at_the_result_cap() {
+        let scratch = Scratch::new("search-cap");
+        for i in 0..(MAX_RESULTS + 50) {
+            fs::write(PathBuf::from(scratch.path()).join(format!("match-{i}.txt")), b"x").unwrap();
+        }
+
+        let result = search_tree(scratch.path(), "match").unwrap();
+        assert_eq!(result.entries.len(), MAX_RESULTS);
+        assert!(result.truncated, "hitting the cap must be reported");
     }
 }

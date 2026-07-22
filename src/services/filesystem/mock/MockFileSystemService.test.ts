@@ -65,4 +65,37 @@ describe('MockFileSystemService', () => {
     expect(names).not.toContain('A')
     expect(names).not.toContain('B')
   })
+
+  describe('searchDirectory', () => {
+    it('finds matches in nested folders', async () => {
+      // The fixture's Projects/galaxy-app/main.tsx lives two levels down.
+      const result = await fs.searchDirectory(home, 'main.tsx')
+      const names = result.entries.map((e) => e.name)
+
+      expect(names).toContain('main.tsx')
+      expect(result.truncated).toBe(false)
+    })
+
+    it('is case-insensitive and matches folder names', async () => {
+      const result = await fs.searchDirectory(home, 'PROJECTS')
+      expect(result.entries.some((e) => e.name === 'Projects' && e.isDirectory)).toBe(true)
+    })
+
+    it('returns nothing for an empty query rather than everything', async () => {
+      for (const query of ['', '   ']) {
+        expect((await fs.searchDirectory(home, query)).entries).toHaveLength(0)
+      }
+    })
+
+    it('produces real, resolvable paths for every result', async () => {
+      const result = await fs.searchDirectory(home, 'e') // matches broadly
+      expect(result.entries.length).toBeGreaterThan(0)
+
+      // Each result must be listable at its own parent — a search hit that
+      // cannot be navigated to would be useless.
+      for (const entry of result.entries.filter((e) => e.isDirectory)) {
+        await expect(fs.listDirectory(entry.path)).resolves.toBeTruthy()
+      }
+    })
+  })
 })

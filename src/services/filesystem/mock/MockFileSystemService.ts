@@ -1,5 +1,5 @@
 import { classifyEntry } from '@/lib/classify'
-import type { DirectoryListing, DriveInfo, FsEntry } from '@/types'
+import type { DirectoryListing, DriveInfo, FsEntry, SearchResult } from '@/types'
 import { FsError } from '@/types'
 import { dirname, join, normalizePath } from '@/utils/path'
 
@@ -135,6 +135,42 @@ export class MockFileSystemService implements FileSystemService {
       parent.children = parent.children!.filter((child) => child !== node)
     }
     return paths
+  }
+
+  async searchDirectory(root: string, query: string): Promise<SearchResult> {
+    await delay(LATENCY_MS)
+
+    const needle = query.trim().toLowerCase()
+    if (!needle) return { entries: [], truncated: false, examined: 0 }
+
+    const rootNode = resolveNode(root)
+    if (!rootNode?.isDirectory) throw new FsError('not-found', `No such directory: ${root}`, root)
+
+    const entries: FsEntry[] = []
+    let examined = 0
+
+    // Iterative walk, mirroring the Rust backend's structure.
+    const stack: Array<{ node: MockNode; parentPath: string }> = [
+      { node: rootNode, parentPath: dirname(normalizePath(root)) ?? '' },
+    ]
+
+    while (stack.length > 0) {
+      const { node, parentPath } = stack.pop()!
+      examined += 1
+      const nodePath = join(parentPath, node.name)
+
+      for (const child of node.children ?? []) {
+        if (child.name.toLowerCase().includes(needle)) {
+          entries.push(toEntry(child, nodePath))
+        }
+        if (child.isDirectory) stack.push({ node: child, parentPath: nodePath })
+      }
+    }
+
+    entries.sort(
+      (a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name),
+    )
+    return { entries, truncated: false, examined }
   }
 
   async openEntry(path: string): Promise<void> {

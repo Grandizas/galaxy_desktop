@@ -22,6 +22,14 @@ export interface DirectoryListing {
   readonly readAt: number
 }
 
+export interface SearchResult {
+  readonly entries: readonly FsEntry[]
+  /** A limit stopped the walk before the whole subtree was seen. */
+  readonly truncated: boolean
+  /** Directories descended into. */
+  readonly examined: number
+}
+
 export interface DriveInfo {
   readonly path: string
   readonly label: string

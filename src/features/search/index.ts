@@ -1,2 +1,2 @@
 export * from './SearchField'
-export * from './useSearchMatches'
+export * from './SearchResults'
