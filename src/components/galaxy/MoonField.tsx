@@ -18,6 +18,7 @@ interface MoonFieldProps {
   onOpen?: (body: CelestialBody) => void
   onHover?: (body: CelestialBody | null) => void
   onContextMenu?: (body: CelestialBody, screen: { x: number; y: number }) => void
+  onBodyPointerDown?: (body: CelestialBody, clientX: number, clientY: number) => void
 }
 
 /** How much a hovered or selected body grows. */
@@ -52,6 +53,7 @@ export function MoonField({
   onOpen,
   onHover,
   onContextMenu,
+  onBodyPointerDown,
 }: MoonFieldProps) {
   const meshRef = useRef<InstancedMesh>(null)
   /** Follows the hovered instance so its label tracks the moving body. */
@@ -160,6 +162,12 @@ export function MoonField({
         key={bodies.length}
         args={[undefined, undefined, bodies.length]}
         frustumCulled={false}
+        onPointerDown={(event) => {
+          const body = bodyAt(event.instanceId)
+          if (!body) return
+          event.stopPropagation()
+          onBodyPointerDown?.(body, event.clientX, event.clientY)
+        }}
         onClick={(event) => {
           const body = bodyAt(event.instanceId)
           if (!body) return

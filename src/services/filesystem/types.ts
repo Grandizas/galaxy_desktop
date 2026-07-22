@@ -31,6 +31,12 @@ export interface FileSystemService {
   deleteEntries(paths: readonly string[]): Promise<readonly string[]>
 
   /**
+   * Moves entries into a target directory. Rejects moving a folder into itself
+   * or a descendant, a no-op, or a name collision. Returns the new paths.
+   */
+  moveEntries(paths: readonly string[], targetDir: string): Promise<readonly string[]>
+
+  /**
    * Case-insensitive recursive search of a subtree by name. Bounded by the
    * backend; check `truncated` to know whether results were capped.
    */

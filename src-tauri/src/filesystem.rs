@@ -343,6 +343,44 @@ fn rename_path(path: &str, new_name: &str) -> Result<Entry, String> {
     to_entry(&target).ok_or_else(|| "Renamed but could not be read".to_string())
 }
 
+/// Moves entries into a target directory.
+///
+/// Validated all-or-nothing before anything is touched, so a bad path in a
+/// multi-select cannot leave the operation half-applied at the validation
+/// stage. A move that fails mid-batch (a permission race, say) still leaves the
+/// entries moved before it — filesystem moves are not transactional — so the
+/// returned error names what remained. The drag UI moves one entry at a time.
+#[tauri::command]
+pub async fn move_entries(paths: Vec<String>, target_dir: String) -> Result<Vec<String>, String> {
+    off_thread(move || move_paths(paths, &target_dir)).await?
+}
+
+fn move_paths(paths: Vec<String>, target_dir: &str) -> Result<Vec<String>, String> {
+    let target = PathBuf::from(target_dir);
+
+    let planned: Vec<(PathBuf, PathBuf)> = paths
+        .iter()
+        .map(|path| {
+            let source = PathBuf::from(path);
+            let dest = crate::safety::resolve_move_target(&source, &target)?;
+            Ok((source, dest))
+        })
+        .collect::<Result<_, String>>()?;
+
+    let mut moved = Vec::with_capacity(planned.len());
+    for (source, dest) in planned {
+        fs::rename(&source, &dest).map_err(|e| {
+            if moved.is_empty() {
+                format!("Could not move: {e}")
+            } else {
+                format!("Could not move all items ({e}); {} already moved", moved.len())
+            }
+        })?;
+        moved.push(dest.to_string_lossy().to_string());
+    }
+    Ok(moved)
+}
+
 /// Moves entries to the Recycle Bin.
 ///
 /// Never a permanent delete: `trash` hands the operation to the shell, so
@@ -537,6 +575,31 @@ mod tests {
             PathBuf::from(&doomed.path).is_dir(),
             "nothing may be deleted when validation fails"
         );
+    }
+
+    #[test]
+    fn move_relocates_an_entry() {
+        let scratch = Scratch::new("move");
+        let dest = make_directory(scratch.path(), "dest").unwrap();
+        let source = make_directory(scratch.path(), "item").unwrap();
+
+        let moved = move_paths(vec![source.path.clone()], &dest.path).unwrap();
+
+        assert!(!PathBuf::from(&source.path).exists(), "source gone");
+        assert!(PathBuf::from(&moved[0]).is_dir(), "arrived at destination");
+    }
+
+    #[test]
+    fn move_validates_the_whole_batch_before_touching_anything() {
+        let scratch = Scratch::new("move-atomic");
+        let dest = make_directory(scratch.path(), "dest").unwrap();
+        let good = make_directory(scratch.path(), "good").unwrap();
+
+        // Second path is invalid (into itself), so nothing should move.
+        let result = move_paths(vec![good.path.clone(), dest.path.clone()], &dest.path);
+
+        assert!(result.is_err());
+        assert!(PathBuf::from(&good.path).is_dir(), "valid entry must not move");
     }
 
     #[test]

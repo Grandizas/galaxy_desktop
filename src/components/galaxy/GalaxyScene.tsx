@@ -2,12 +2,15 @@ import { useCallback, useMemo } from 'react'
 import type { Vector3 } from 'three'
 
 import { useEntryActions } from '@/features/explorer/useEntryActions'
+import { canDrop } from '@/features/filesystem/canDrop'
 import { mapEntriesToGalaxy } from '@/features/filesystem/mapEntriesToGalaxy'
+import { useBodyDrag } from '@/features/filesystem/useBodyDrag'
 import { useWarpTransition } from '@/features/navigation/useWarpTransition'
 import { GALAXY, STARFIELD } from '@/lib/constants'
 import { env } from '@/lib/env'
 import { useFilesystemStore } from '@/store/filesystemStore'
 import { useSearchStore } from '@/store/searchStore'
+import { useDragStore } from '@/store/dragStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import type { CelestialBody } from '@/types'
@@ -42,6 +45,16 @@ export function GalaxyScene() {
   const { open: openEntry } = useEntryActions()
   const reducedMotion = useUiStore((state) => state.reducedMotion)
 
+  const { onBodyPointerDown, consumeDragClick } = useBodyDrag()
+  const dragging = useDragStore((state) => state.dragging)
+  const dropTarget = useDragStore((state) => state.dropTarget)
+  const setDropTarget = useDragStore((state) => state.setDropTarget)
+
+  const entryFor = useCallback(
+    (body: CelestialBody) => entries.find((entry) => entry.path === body.id),
+    [entries],
+  )
+
   const system = useMemo(
     () => mapEntriesToGalaxy(currentPath ?? '', basename(currentPath ?? ''), entries),
     [currentPath, entries],
@@ -71,10 +84,27 @@ export function GalaxyScene() {
     return { planets, instanced }
   }, [system.bodies])
 
-  const handleSelect = (body: CelestialBody, additive: boolean) =>
+  const handleSelect = (body: CelestialBody, additive: boolean) => {
+    // Swallow the click that R3F fires at the end of a drag-to-move.
+    if (consumeDragClick()) return
     select(body.id, additive ? 'toggle' : 'replace')
+  }
 
-  const handleHover = (body: CelestialBody | null) => setHovered(body?.id ?? null)
+  const handlePointerDown = (body: CelestialBody, clientX: number, clientY: number) => {
+    const entry = entryFor(body)
+    if (entry) onBodyPointerDown(entry, clientX, clientY)
+  }
+
+  const handleHover = (body: CelestialBody | null) => {
+    setHovered(body?.id ?? null)
+
+    // While dragging, a folder-planet under the pointer becomes the drop target
+    // when the move is legal. `canDrop` mirrors the backend guards so an illegal
+    // target simply never highlights.
+    if (!dragging) return
+    if (body?.type === 'planet' && canDrop(dragging, body.id)) setDropTarget(body.id)
+    else setDropTarget(null)
+  }
 
   const handleContextMenu = (body: CelestialBody, screen: { x: number; y: number }) => {
     // Right-clicking outside the selection targets just that body, matching
@@ -129,6 +159,7 @@ export function GalaxyScene() {
         onOpen={handleOpen}
         onHover={handleHover}
         onContextMenu={handleContextMenu}
+        onBodyPointerDown={handlePointerDown}
       />
 
       {/* Planets stay individual: they carry labels, satellites and their own
@@ -140,12 +171,14 @@ export function GalaxyScene() {
           index={index}
           selected={selected.has(body.id)}
           hovered={hoveredPath === body.id}
+          dropTarget={dropTarget === body.id}
           dimmed={isDimmed(body)}
           showLabel={planets.length <= GALAXY.labelLimit}
           onSelect={handleSelect}
           onOpen={handleOpen}
           onContextMenu={handleContextMenu}
           onHover={handleHover}
+          onBodyPointerDown={handlePointerDown}
         />
       ))}
     </>

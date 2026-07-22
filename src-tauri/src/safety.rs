@@ -5,6 +5,7 @@
 //! costs the user one retry, while allowing a malformed path can destroy data or
 //! silently create a file nothing can open or delete.
 
+use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 /// Characters Windows forbids in a file name.
@@ -140,6 +141,46 @@ pub fn resolve_rename_target(path: &Path, new_name: &str) -> Result<PathBuf, Str
     Ok(target)
 }
 
+/// Resolves the destination for moving `source` into `target_dir`.
+///
+/// Rejects the moves that lose data or corrupt the tree: into itself, into one
+/// of its own descendants (which would orphan the moved subtree), a no-op move
+/// back to the current parent, and a name collision at the destination.
+pub fn resolve_move_target(source: &Path, target_dir: &Path) -> Result<PathBuf, String> {
+    if !source.exists() {
+        return Err(format!("{} no longer exists", source.display()));
+    }
+
+    let metadata =
+        fs::metadata(target_dir).map_err(|e| format!("{}: {e}", target_dir.display()))?;
+    if !metadata.is_dir() {
+        return Err("The drop target is not a folder".into());
+    }
+
+    let name = source
+        .file_name()
+        .ok_or_else(|| "Cannot move a drive root".to_string())?;
+
+    if source.parent() == Some(target_dir) {
+        return Err(format!("\"{}\" is already here", name.to_string_lossy()));
+    }
+
+    // Case-insensitive prefix test: Windows paths are case-insensitive, so a
+    // component-wise `starts_with` could miss `C:\A\B` inside `c:\a\b`. The
+    // trailing separator stops `C:\ab` from looking like a child of `C:\a`.
+    let src_lower = source.to_string_lossy().to_lowercase();
+    let tgt_lower = target_dir.to_string_lossy().to_lowercase();
+    if tgt_lower == src_lower || tgt_lower.starts_with(&format!("{src_lower}\\")) {
+        return Err("Cannot move a folder into itself".into());
+    }
+
+    let dest = target_dir.join(name);
+    if dest.exists() {
+        return Err(format!("\"{}\" already exists here", name.to_string_lossy()));
+    }
+    Ok(dest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +239,56 @@ mod tests {
         if desktop.exists() {
             assert!(validate_deletable(&desktop).is_err());
         }
+    }
+
+    #[test]
+    fn move_rejects_dropping_a_folder_into_its_own_descendant() {
+        // The critical guard: moving C:\a into C:\a\b\c would orphan the tree.
+        let scratch = std::env::temp_dir().join("galaxy-move-guard");
+        let _ = fs::remove_dir_all(&scratch);
+        let source = scratch.join("source");
+        let descendant = source.join("deep").join("nested");
+        fs::create_dir_all(&descendant).unwrap();
+
+        assert!(resolve_move_target(&source, &descendant).is_err());
+        // ...and into itself.
+        assert!(resolve_move_target(&source, &source).is_err());
+
+        let _ = fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn move_rejects_a_no_op_and_a_collision() {
+        let scratch = std::env::temp_dir().join("galaxy-move-noop");
+        let _ = fs::remove_dir_all(&scratch);
+        let dest_dir = scratch.join("dest");
+        fs::create_dir_all(&dest_dir).unwrap();
+        let source = scratch.join("item.txt");
+        fs::write(&source, b"x").unwrap();
+
+        // No-op: source's parent is already the target.
+        assert!(resolve_move_target(&source, &scratch).is_err());
+
+        // Collision: something with the same name already lives at the target.
+        fs::write(dest_dir.join("item.txt"), b"y").unwrap();
+        assert!(resolve_move_target(&source, &dest_dir).is_err());
+
+        let _ = fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn move_accepts_a_valid_relocation() {
+        let scratch = std::env::temp_dir().join("galaxy-move-ok");
+        let _ = fs::remove_dir_all(&scratch);
+        let dest_dir = scratch.join("dest");
+        fs::create_dir_all(&dest_dir).unwrap();
+        let source = scratch.join("item.txt");
+        fs::write(&source, b"x").unwrap();
+
+        let target = resolve_move_target(&source, &dest_dir).unwrap();
+        assert_eq!(target, dest_dir.join("item.txt"));
+
+        let _ = fs::remove_dir_all(&scratch);
     }
 
     #[test]
