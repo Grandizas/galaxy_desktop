@@ -141,6 +141,21 @@ pub fn resolve_rename_target(path: &Path, new_name: &str) -> Result<PathBuf, Str
     Ok(target)
 }
 
+/// Normalised path key for comparison: lowercased (Windows is case-insensitive)
+/// with both separator styles folded to `\` (Windows accepts `/` too, so a
+/// `\`-only test could be tricked by a `/`-delimited path).
+fn path_key(path: &Path) -> String {
+    path.to_string_lossy().to_lowercase().replace('/', "\\")
+}
+
+/// True when `path` is `ancestor` itself or lives inside it. The trailing
+/// separator stops `C:\ab` from looking like a child of `C:\a`.
+pub fn is_within(path: &Path, ancestor: &Path) -> bool {
+    let p = path_key(path);
+    let a = path_key(ancestor);
+    p == a || p.starts_with(&format!("{a}\\"))
+}
+
 /// Resolves the destination for moving `source` into `target_dir`.
 ///
 /// Rejects the moves that lose data or corrupt the tree: into itself, into one
@@ -165,12 +180,7 @@ pub fn resolve_move_target(source: &Path, target_dir: &Path) -> Result<PathBuf, 
         return Err(format!("\"{}\" is already here", name.to_string_lossy()));
     }
 
-    // Case-insensitive prefix test: Windows paths are case-insensitive, so a
-    // component-wise `starts_with` could miss `C:\A\B` inside `c:\a\b`. The
-    // trailing separator stops `C:\ab` from looking like a child of `C:\a`.
-    let src_lower = source.to_string_lossy().to_lowercase();
-    let tgt_lower = target_dir.to_string_lossy().to_lowercase();
-    if tgt_lower == src_lower || tgt_lower.starts_with(&format!("{src_lower}\\")) {
+    if is_within(target_dir, source) {
         return Err("Cannot move a folder into itself".into());
     }
 
@@ -255,6 +265,16 @@ mod tests {
         assert!(resolve_move_target(&source, &source).is_err());
 
         let _ = fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn is_within_is_case_and_separator_independent() {
+        // Windows accepts both separators; a \-only check would miss the second.
+        assert!(is_within(Path::new(r"C:\a\b\c"), Path::new(r"C:\A\B")));
+        assert!(is_within(Path::new("C:/a/b/c"), Path::new(r"C:\a\b")));
+        assert!(is_within(Path::new(r"C:\a\b"), Path::new("c:/a/b")));
+        // A shared prefix that is not a real ancestor.
+        assert!(!is_within(Path::new(r"C:\ab"), Path::new(r"C:\a")));
     }
 
     #[test]

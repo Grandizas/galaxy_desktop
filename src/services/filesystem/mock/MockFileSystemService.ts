@@ -163,6 +163,13 @@ export class MockFileSystemService implements FileSystemService {
       return { parent, node }
     })
 
+    // Reject intra-batch conflicts before mutating, matching the backend: two
+    // sources that would land on the same name collide once moving begins.
+    const destNames = planned.map(({ node }) => node.name.toLowerCase())
+    if (new Set(destNames).size !== destNames.length) {
+      throw new FsError('unsupported', 'Two of the items would land on the same name', targetDir)
+    }
+
     target.children ??= []
     const moved: string[] = []
     for (const { parent, node } of planned) {

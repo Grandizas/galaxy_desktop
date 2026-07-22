@@ -38,22 +38,30 @@ export function useBodyDrag() {
   /** Set when a drag ends, so the click R3F fires next is swallowed. */
   const justDragged = useRef(false)
 
-  const finish = useCallback(() => {
-    const target = useDragStore.getState().dropTarget
-    const dragged = pending.current
+  /**
+   * Ends the gesture. `commit` is true only on pointerup — pointercancel is an
+   * aborted gesture (the OS took over, the window blurred) and must never move
+   * anything, just clean up.
+   */
+  const settle = useCallback(
+    (commit: boolean) => {
+      const target = useDragStore.getState().dropTarget
+      const dragged = pending.current
 
-    if (controls) controls.enabled = true
-    justDragged.current = dragged?.dragging ?? false
-    pending.current = null
-    end()
+      if (controls) controls.enabled = true
+      justDragged.current = dragged?.dragging ?? false
+      pending.current = null
+      end()
 
-    if (!dragged?.dragging || !target) return
+      if (!commit || !dragged?.dragging || !target) return
 
-    void moveEntries([dragged.entry.path], target).then((ok) => {
-      if (ok) pushToast(`Moved "${basename(dragged.entry.path)}" here`)
-      else pushToast(useFilesystemStore.getState().error ?? 'Could not move')
-    })
-  }, [controls, end, moveEntries, pushToast])
+      void moveEntries([dragged.entry.path], target).then((ok) => {
+        if (ok) pushToast(`Moved "${basename(dragged.entry.path)}" here`)
+        else pushToast(useFilesystemStore.getState().error ?? 'Could not move')
+      })
+    },
+    [controls, end, moveEntries, pushToast],
+  )
 
   useEffect(() => {
     const onMove = (event: PointerEvent) => {
@@ -66,16 +74,18 @@ export function useBodyDrag() {
       state.dragging = true
       begin(state.entry)
     }
+    const onUp = () => settle(true)
+    const onCancel = () => settle(false)
 
     window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', finish)
-    window.addEventListener('pointercancel', finish)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
     return () => {
       window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', finish)
-      window.removeEventListener('pointercancel', finish)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
     }
-  }, [begin, finish])
+  }, [begin, settle])
 
   /** Attach to a body's onPointerDown. */
   const onBodyPointerDown = useCallback(

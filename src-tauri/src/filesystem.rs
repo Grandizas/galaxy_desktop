@@ -367,6 +367,24 @@ fn move_paths(paths: Vec<String>, target_dir: &str) -> Result<Vec<String>, Strin
         })
         .collect::<Result<_, String>>()?;
 
+    // Conflicts *within* the batch pass the per-item checks above (each dest is
+    // free before the loop starts) but collide once moving begins. Reject them
+    // up front so the operation stays all-or-nothing.
+    for (i, (source_a, dest_a)) in planned.iter().enumerate() {
+        for (source_b, dest_b) in planned.iter().skip(i + 1) {
+            if dest_a == dest_b {
+                return Err("Two of the items would land on the same name".into());
+            }
+            // Moving a folder and something inside it together: the parent moves
+            // first and takes the child with it, so the child's own move fails.
+            if crate::safety::is_within(source_b, source_a)
+                || crate::safety::is_within(source_a, source_b)
+            {
+                return Err("Cannot move a folder and something inside it together".into());
+            }
+        }
+    }
+
     let mut moved = Vec::with_capacity(planned.len());
     for (source, dest) in planned {
         fs::rename(&source, &dest).map_err(|e| {
@@ -600,6 +618,43 @@ mod tests {
 
         assert!(result.is_err());
         assert!(PathBuf::from(&good.path).is_dir(), "valid entry must not move");
+    }
+
+    #[test]
+    fn move_rejects_two_sources_that_would_share_a_destination() {
+        let scratch = Scratch::new("move-clash");
+        let dest = make_directory(scratch.path(), "dest").unwrap();
+        let a = make_directory(scratch.path(), "a").unwrap();
+        let b = make_directory(scratch.path(), "b").unwrap();
+        // Both have basename "same" after being renamed into place.
+        fs::write(PathBuf::from(&a.path).join("same.txt"), b"x").unwrap();
+        fs::write(PathBuf::from(&b.path).join("same.txt"), b"y").unwrap();
+
+        let result = move_paths(
+            vec![
+                format!("{}\\same.txt", a.path),
+                format!("{}\\same.txt", b.path),
+            ],
+            &dest.path,
+        );
+
+        assert!(result.is_err(), "same destination name must be rejected");
+        // Neither moved — the clash was caught before the loop.
+        assert!(PathBuf::from(&a.path).join("same.txt").exists());
+        assert!(PathBuf::from(&b.path).join("same.txt").exists());
+    }
+
+    #[test]
+    fn move_rejects_a_parent_and_its_child_together() {
+        let scratch = Scratch::new("move-nested-batch");
+        let dest = make_directory(scratch.path(), "dest").unwrap();
+        let parent = make_directory(scratch.path(), "parent").unwrap();
+        let child = make_directory(&parent.path, "child").unwrap();
+
+        let result = move_paths(vec![parent.path.clone(), child.path.clone()], &dest.path);
+
+        assert!(result.is_err());
+        assert!(PathBuf::from(&parent.path).is_dir(), "nothing moved");
     }
 
     #[test]

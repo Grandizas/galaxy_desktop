@@ -95,6 +95,22 @@ describe('MockFileSystemService', () => {
 
       await expect(fs.moveEntries([`${home}\\dup`], `${home}\\Bin`)).rejects.toBeInstanceOf(FsError)
     })
+
+    it('rejects two sources that would share a destination name', async () => {
+      await fs.createDirectory(home, 'Dest')
+      await fs.createDirectory(home, 'A')
+      await fs.createDirectory(home, 'B')
+      await fs.createDirectory(`${home}\\A`, 'same')
+      await fs.createDirectory(`${home}\\B`, 'same')
+
+      await expect(
+        fs.moveEntries([`${home}\\A\\same`, `${home}\\B\\same`], `${home}\\Dest`),
+      ).rejects.toBeInstanceOf(FsError)
+
+      // Neither moved — the clash is caught before mutating.
+      expect(await namesIn(`${home}\\A`)).toContain('same')
+      expect(await namesIn(`${home}\\B`)).toContain('same')
+    })
   })
 
   describe('searchDirectory', () => {

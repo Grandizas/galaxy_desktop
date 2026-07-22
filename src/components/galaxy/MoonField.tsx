@@ -163,6 +163,7 @@ export function MoonField({
         args={[undefined, undefined, bodies.length]}
         frustumCulled={false}
         onPointerDown={(event) => {
+          if (event.button !== 0) return // left button only; right = context menu
           const body = bodyAt(event.instanceId)
           if (!body) return
           event.stopPropagation()

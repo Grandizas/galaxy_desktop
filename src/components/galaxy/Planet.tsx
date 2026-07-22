@@ -76,6 +76,9 @@ export function Planet({
           <mesh
             ref={meshRef}
             onPointerDown={(event) => {
+              // Left button only — right/middle must reach the context menu,
+              // not begin a move.
+              if (event.button !== 0) return
               event.stopPropagation()
               onBodyPointerDown?.(body, event.clientX, event.clientY)
             }}
