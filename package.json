@@ -6,7 +6,7 @@
   "description": "Galaxy File Explorer — the Windows file system visualised as a living 3D galaxy.",
   "packageManager": "pnpm@11.15.1",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "dev": "vite",

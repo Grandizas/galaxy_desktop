@@ -54,7 +54,7 @@ explorer.
 
 ### Prerequisites
 
-- **Node 20+** and **pnpm**
+- **Node 22.13+** and **pnpm** (pnpm 11 requires Node 22.13)
 - For the desktop shell: **Rust** ([rustup.rs](https://rustup.rs)) and the
   **Visual Studio Build Tools** with the _Desktop development with C++_ workload
 - WebView2 (preinstalled on Windows 11)
