@@ -10,7 +10,7 @@ use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct Entry {
     pub path: String,
     pub name: String,
@@ -156,7 +156,7 @@ fn windows_drives() -> Vec<Drive> {
         .collect()
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct SearchResult {
     pub entries: Vec<Entry>,
     /// True when a limit stopped the walk before the whole tree was seen.
@@ -193,9 +193,13 @@ fn search_tree(root: &str, query: &str) -> Result<SearchResult, String> {
     }
 
     let root_path = PathBuf::from(root);
-    if !root_path.is_dir() {
-        return Err(format!("{root} is not a directory"));
-    }
+    // Probe the root eagerly so a missing (os error 2) or denied (os error 5)
+    // root is reported with its OS error — which the renderer classifies into
+    // not-found / permission-denied — instead of `is_dir()` collapsing both to
+    // `false` and a generic message, or the loop silently returning no results.
+    // Descendant read failures are still skipped: a denied subfolder narrows the
+    // search, it does not fail it. Message format matches `read_directory`.
+    fs::read_dir(&root_path).map_err(|e| format!("{root}: {e}"))?;
 
     let mut entries = Vec::new();
     let mut queue: Vec<(PathBuf, u32)> = vec![(root_path, 0)];
@@ -571,6 +575,14 @@ mod tests {
             let result = search_tree(scratch.path(), query).unwrap();
             assert!(result.entries.is_empty(), "query {query:?} must match nothing");
         }
+    }
+
+    #[test]
+    fn search_on_a_missing_root_surfaces_the_os_error() {
+        // The renderer classifies "os error 2" as not-found; a generic message
+        // would strand it as `unknown`. Same contract as read_directory.
+        let err = search_tree(r"C:\definitely-not-a-real-path-9f2a", "x").unwrap_err();
+        assert!(err.contains("os error"), "expected an OS error, got: {err}");
     }
 
     #[test]
